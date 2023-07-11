@@ -21,6 +21,7 @@ pub struct Input<'a> {
     earliest: bool,
     haystack_off: usize,
     haystack: &'a [u8],
+    peeked_haystack: Option<&'a [u8]>,
     haystack_cursor: ropey::iter::Chunks<'a>,
     at_start: bool,
 }
@@ -48,6 +49,7 @@ impl<'h> Input<'h> {
             haystack_off: 0,
             haystack_cursor,
             at_start: false,
+            peeked_haystack: None,
         }
     }
 
@@ -89,6 +91,11 @@ impl<'h> Input<'h> {
         self.haystack_off
     }
 
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.total_bytes
+    }
+
     /// Return a borrow of the current underlying haystack as a slice of bytes.
     ///
     /// # Example
@@ -104,8 +111,45 @@ impl<'h> Input<'h> {
         self.haystack
     }
 
+    /// Return a borrow of the current underlying haystack as a slice of bytes.
+    /// Automatically resizes the first and the last haystack to stay within span bounderies
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ropey_regex::Input;
+    ///
+    /// let input = Input::new("foobar").range(1..);
+    /// assert_eq!(b"oobar", input.haystack());
+    /// ```
+    #[inline]
+    pub fn haystack_truncated(&self) -> &'h [u8] {
+        let end = self.end() - self.haystack_off;
+        if end < self.haystack.len() {
+            return &self.haystack[..end];
+        }
+        self.haystack
+    }
+
+    #[inline]
+    pub fn peek(&mut self) -> &'h [u8] {
+        *self.peeked_haystack.get_or_insert_with(|| {
+            if self.at_start {
+                self.at_start = false;
+                let _haystack = self.haystack_cursor.next().unwrap_or_default().as_bytes();
+                debug_assert_eq!(_haystack, self.haystack);
+            }
+            self.haystack_cursor.next().unwrap_or_default().as_bytes()
+        })
+    }
+
     #[inline]
     pub fn advance_fwd(&mut self) -> Option<&'h [u8]> {
+        if let Some(peeked) = self.peeked_haystack.take() {
+            self.haystack_off += self.haystack.len();
+            self.haystack = peeked;
+            return Some(peeked);
+        }
         if self.at_start {
             self.at_start = false;
             let _haystack = self.haystack_cursor.next().unwrap_or_default().as_bytes();
@@ -119,7 +163,13 @@ impl<'h> Input<'h> {
 
     #[inline]
     pub fn advance_rev(&mut self) -> Option<&'h [u8]> {
-        if !self.at_start {
+        if let Some(peeked) = self.peeked_haystack.take() {
+            let _haystack = self.haystack_cursor.prev().unwrap_or_default().as_bytes();
+            debug_assert_eq!(_haystack, peeked);
+            self.at_start = true;
+            let _haystack = self.haystack_cursor.prev().unwrap_or_default().as_bytes();
+            debug_assert_eq!(_haystack, self.haystack);
+        } else if !self.at_start {
             self.at_start = true;
             let _haystack = self.haystack_cursor.prev().unwrap_or_default().as_bytes();
             debug_assert_eq!(_haystack, self.haystack);

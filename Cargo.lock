@@ -271,6 +271,12 @@ version = "0.7.3"
 source = "git+https://github.com/pascalkuthe/regex#1d98af133599790f6c7ff2a2a3838705596e5c85"
 
 [[package]]
+name = "regex-syntax"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5ea92a5b6195c6ef2a0295ea818b312502c6fc94dde986c5553242e18fd4ce2"
+
+[[package]]
 name = "ropey"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -288,6 +294,7 @@ dependencies = [
  "memchr",
  "proptest",
  "regex-automata",
+ "regex-syntax 0.7.4",
  "ropey",
 ]
 
