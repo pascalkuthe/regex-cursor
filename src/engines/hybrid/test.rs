@@ -40,7 +40,7 @@ fn hotloop_transition() {
     let needle = "/";
     let foo = ropey::Rope::from_str(haystack);
     let regex = super::Regex::builder()
-        .syntax(regex_automata::util::syntax::Config::new().case_insensitive(true).unicode(false))
+        .syntax(regex_automata::util::syntax::Config::new().case_insensitive(true))
         .build(needle)
         .unwrap();
     let mut cache1 = regex.create_cache();
@@ -57,7 +57,6 @@ proptest! {
     let Ok(regex) = super::Regex::builder()
         .syntax(regex_automata::util::syntax::Config::new()
             .case_insensitive(true)
-            .unicode(false),
         )
         .build(&needle) else {
         return Ok(())
