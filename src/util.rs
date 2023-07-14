@@ -1,8 +1,11 @@
 use crate::Input;
+use regex_automata::util::escape::DebugHaystack;
 
 pub(crate) mod empty;
 pub mod iter;
 pub mod sparse_set;
+#[cfg(test)]
+mod tests;
 
 /// Returns true if and only if the given offset in the given bytes falls on a
 /// valid UTF-8 encoded codepoint boundary.
@@ -79,18 +82,19 @@ pub(crate) fn decode(input: &mut Input, at: usize) -> Option<Result<char, u8>> {
         Some(len) => len,
     };
     let mut buf = [byte; 4];
+    let buf = &mut buf[..len];
     let mut i = 1;
     while i + at < input.haystack().len() && i < buf.len() {
-        buf[i] = input.haystack()[i];
+        buf[i] = input.haystack()[i + at];
         i += 1;
     }
     let peek = input.peek();
-    while i < buf.len() {
+    while i < buf.len() && i + at - input.haystack().len() < peek.len() {
         buf[i] = *peek.get(i + at - input.haystack().len())?;
         i += 1;
     }
 
-    match core::str::from_utf8(&buf[..len]) {
+    match core::str::from_utf8(&buf) {
         Ok(s) => Some(Ok(s.chars().next().unwrap())),
         Err(_) => Some(Err(byte)),
     }
@@ -116,24 +120,24 @@ pub(crate) fn decode_last(
             break false;
         }
         start -= 1;
+        i -= 1;
+        buf[i] = input.haystack()[start];
         if i == 0 || is_leading_or_invalid_byte(input.haystack()[start]) {
             break true;
         }
-        i -= 1;
-        buf[i] = input.haystack()[start];
     };
     if !done {
-        let mut start = prev_haystack.len();
+        let mut start = prev_haystack.len().saturating_sub(1);
         loop {
             if start == 0 {
                 break;
             }
             start -= 1;
-            if i == 0 || is_leading_or_invalid_byte(input.haystack()[start]) {
+            i -= 1;
+            buf[i] = prev_haystack[start];
+            if i == 0 || is_leading_or_invalid_byte(prev_haystack[start]) {
                 break;
             }
-            i -= 1;
-            buf[i] = input.haystack()[start];
         }
     }
     let byte = *buf.get(i)?;
@@ -206,9 +210,5 @@ pub(crate) fn prev_byte(prev_haystack: &[u8], input: &Input, at: usize) -> Optio
 }
 
 pub(crate) fn get_byte(input: &mut Input, at: usize) -> Option<u8> {
-    input
-        .haystack()
-        .get(at)
-        .or_else(|| input.peek().get(0 - input.haystack().len()))
-        .copied()
+    input.haystack().get(at).or_else(|| input.peek().get(at - input.haystack().len())).copied()
 }

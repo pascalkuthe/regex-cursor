@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 aho-corasick = "1.0.2"
 memchr = "2.5.0"
-regex-automata = { version =  "0.3.1", git = "https://github.com/pascalkuthe/regex"}
+regex-automata = { version =  "0.3.1", path = "../regex/regex-automata"}
 regex-syntax = "0.7.4"
 ropey = "1.6.0"
 

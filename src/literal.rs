@@ -45,10 +45,7 @@ impl Prefilter {
             if max_needle_len > ROPEY_MIN_CHUNK_LEN {
                 return None;
             }
-            Some(Prefilter {
-                inner,
-                max_needle_len,
-            })
+            Some(Prefilter { inner, max_needle_len })
         })
     }
     pub fn wrap<B: AsRef<[u8]>>(imp: Option<Impl>, needles: &[B]) -> Option<Prefilter> {
@@ -63,21 +60,14 @@ impl Prefilter {
             if max_needle_len > ROPEY_MIN_CHUNK_LEN {
                 return None;
             }
-            Some(Prefilter {
-                inner,
-                max_needle_len,
-            })
+            Some(Prefilter { inner, max_needle_len })
         })
     }
 
     pub fn find(&self, input: &mut Input, span: Span) -> Option<Span> {
         let old_span = input.get_span();
         input.set_span(span);
-        let res = if self.max_needle_len == 1 {
-            self.find_1(input)
-        } else {
-            self.find_n(input)
-        };
+        let res = if self.max_needle_len == 1 { self.find_1(input) } else { self.find_n(input) };
         input.set_span(old_span);
         res
     }
@@ -86,13 +76,9 @@ impl Prefilter {
         debug_assert_eq!(self.max_needle_len, 1);
         let start = input.move_to(input.start())?;
         let first_haystack = input.haystack_truncated();
-        if let Some(mut res) = self.inner.find(
-            first_haystack,
-            Span {
-                start,
-                end: first_haystack.len(),
-            },
-        ) {
+        if let Some(mut res) =
+            self.inner.find(first_haystack, Span { start, end: first_haystack.len() })
+        {
             res.start += input.haystack_off();
             res.end += input.haystack_off();
             return Some(res);
@@ -100,13 +86,9 @@ impl Prefilter {
         loop {
             input.advance_fwd()?;
             let haystack = input.haystack_truncated();
-            let Some(mut res) = self.inner.find(
-                haystack,
-                Span {
-                    start: 0,
-                    end: first_haystack.len(),
-                },
-            ) else{
+            let Some(mut res) =
+                self.inner.find(haystack, Span { start: 0, end: first_haystack.len() })
+            else {
                 continue;
             };
 
@@ -123,13 +105,9 @@ impl Prefilter {
         let mut buf = Vec::with_capacity(self.max_needle_len * 2 - 2);
         let start = input.move_to(input.start())?;
         let first_haystack = input.haystack_truncated();
-        if let Some(mut res) = self.inner.find(
-            first_haystack,
-            Span {
-                start,
-                end: first_haystack.len(),
-            },
-        ) {
+        if let Some(mut res) =
+            self.inner.find(first_haystack, Span { start, end: first_haystack.len() })
+        {
             res.start += input.haystack_off();
             res.end += input.haystack_off();
             return Some(res);
@@ -140,26 +118,15 @@ impl Prefilter {
         let carry_over_start = first_haystack.len().saturating_sub(carry_over);
         buf.extend_from_slice(&first_haystack[carry_over_start..]);
         buf.extend_from_slice(&haystack[..carry_over.min(haystack.len())]);
-        if let Some(mut res) = self.inner.find(
-            &buf,
-            Span {
-                start: 0,
-                end: buf.len(),
-            },
-        ) {
+        if let Some(mut res) = self.inner.find(&buf, Span { start: 0, end: buf.len() }) {
             res.start += prev_haystack_off + carry_over_start;
             res.end += prev_haystack_off + carry_over_start;
             return Some(res);
         }
         loop {
             let haystack = input.haystack_truncated();
-            if let Some(mut res) = self.inner.find(
-                haystack,
-                Span {
-                    start: 0,
-                    end: haystack.len(),
-                },
-            ) {
+            if let Some(mut res) = self.inner.find(haystack, Span { start: 0, end: haystack.len() })
+            {
                 res.start += input.haystack_off();
                 res.end += input.haystack_off();
                 return Some(res);
@@ -172,13 +139,7 @@ impl Prefilter {
             let haystack = input.haystack_truncated();
             buf.extend_from_slice(&prev_haystack[prev_haystack.len().saturating_sub(carry_over)..]);
             buf.extend_from_slice(&haystack[..carry_over.min(haystack.len())]);
-            if let Some(mut res) = self.inner.find(
-                &buf,
-                Span {
-                    start: 0,
-                    end: buf.len(),
-                },
-            ) {
+            if let Some(mut res) = self.inner.find(&buf, Span { start: 0, end: buf.len() }) {
                 res.start += prev_haystack_off + carry_over_start;
                 res.end += prev_haystack_off + carry_over_start;
                 return Some(res);

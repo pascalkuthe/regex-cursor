@@ -252,7 +252,6 @@ dependencies = [
 [[package]]
 name = "regex-automata"
 version = "0.3.2"
-source = "git+https://github.com/pascalkuthe/regex#1d98af133599790f6c7ff2a2a3838705596e5c85"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -268,7 +267,6 @@ checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
 [[package]]
 name = "regex-syntax"
 version = "0.7.3"
-source = "git+https://github.com/pascalkuthe/regex#1d98af133599790f6c7ff2a2a3838705596e5c85"
 
 [[package]]
 name = "regex-syntax"

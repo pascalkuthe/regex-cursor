@@ -23,7 +23,7 @@ pub struct Input<'a> {
     haystack: &'a [u8],
     peeked_haystack: Option<&'a [u8]>,
     haystack_cursor: ropey::iter::Chunks<'a>,
-    at_start: bool,
+    cursor_pos: CursorsPos,
 }
 
 impl<'h> From<RopeSlice<'h>> for Input<'h> {
@@ -32,23 +32,27 @@ impl<'h> From<RopeSlice<'h>> for Input<'h> {
     }
 }
 
+#[derive(Clone, Debug, Copy, PartialEq, PartialOrd, Ord, Eq)]
+enum CursorsPos {
+    Start,
+    End,
+    Peeked,
+}
+
 impl<'h> Input<'h> {
     /// Create a new search configuration for the given haystack.
     #[inline]
     pub fn new(haystack: ropey::RopeSlice<'h>) -> Self {
         let mut haystack_cursor = haystack.chunks();
         Input {
-            span: Span {
-                start: 0,
-                end: haystack.len_bytes(),
-            },
+            span: Span { start: 0, end: haystack.len_bytes() },
             haystack: haystack_cursor.next().unwrap_or_default().as_bytes(),
             anchored: Anchored::No,
             earliest: false,
             total_bytes: haystack.len_bytes(),
             haystack_off: 0,
             haystack_cursor,
-            at_start: false,
+            cursor_pos: CursorsPos::End,
             peeked_haystack: None,
         }
     }
@@ -75,9 +79,7 @@ impl<'h> Input<'h> {
 
     #[inline]
     pub fn look_ahead(&mut self) -> Option<u8> {
-        self.move_to(self.span.end)
-            .and_then(|i| self.haystack.get(i))
-            .copied()
+        self.move_to(self.span.end).and_then(|i| self.haystack.get(i)).copied()
     }
 
     #[inline]
@@ -133,28 +135,48 @@ impl<'h> Input<'h> {
 
     #[inline]
     pub fn peek(&mut self) -> &'h [u8] {
-        *self.peeked_haystack.get_or_insert_with(|| {
-            if self.at_start {
-                self.at_start = false;
-                let _haystack = self.haystack_cursor.next().unwrap_or_default().as_bytes();
-                debug_assert_eq!(_haystack, self.haystack);
+        if self.peeked_haystack.is_none() {
+            match self.cursor_pos {
+                CursorsPos::Start => {
+                    let _haystack = self.haystack_cursor.next().unwrap_or_default().as_bytes();
+                    debug_assert_eq!(_haystack, self.haystack);
+                }
+                CursorsPos::End => (),
+                CursorsPos::Peeked => unreachable!("can't peek twice"),
             }
-            self.haystack_cursor.next().unwrap_or_default().as_bytes()
-        })
+            self.peeked_haystack = self.haystack_cursor.next().map(|it| it.as_bytes());
+            if self.peeked_haystack.is_some() {
+                self.cursor_pos = CursorsPos::Peeked;
+            }
+        }
+        self.peeked_haystack.unwrap_or_default()
     }
 
     #[inline]
     pub fn advance_fwd(&mut self) -> Option<&'h [u8]> {
         if let Some(peeked) = self.peeked_haystack.take() {
+            self.cursor_pos = match self.cursor_pos {
+                CursorsPos::Start => {
+                    let _haystack = self.haystack_cursor.next().unwrap_or_default().as_bytes();
+                    debug_assert_eq!(_haystack, self.haystack);
+                    CursorsPos::Start
+                }
+                CursorsPos::End => CursorsPos::Start,
+                CursorsPos::Peeked => CursorsPos::End,
+            };
             self.haystack_off += self.haystack.len();
             self.haystack = peeked;
             return Some(peeked);
         }
-        if self.at_start {
-            self.at_start = false;
-            let _haystack = self.haystack_cursor.next().unwrap_or_default().as_bytes();
-            debug_assert_eq!(_haystack, self.haystack);
-        }
+        match self.cursor_pos {
+            CursorsPos::Start => {
+                let _haystack = self.haystack_cursor.next().unwrap_or_default().as_bytes();
+                debug_assert_eq!(_haystack, self.haystack);
+                self.cursor_pos = CursorsPos::End;
+            }
+            CursorsPos::End => (),
+            CursorsPos::Peeked => unreachable!(),
+        };
         let next_haystack = self.haystack_cursor.next()?;
         self.haystack_off += self.haystack.len();
         self.haystack = next_haystack.as_bytes();
@@ -163,18 +185,22 @@ impl<'h> Input<'h> {
 
     #[inline]
     pub fn advance_rev(&mut self) -> Option<&'h [u8]> {
-        if let Some(peeked) = self.peeked_haystack.take() {
-            let _haystack = self.haystack_cursor.prev().unwrap_or_default().as_bytes();
-            debug_assert_eq!(_haystack, peeked);
-            self.at_start = true;
-            let _haystack = self.haystack_cursor.prev().unwrap_or_default().as_bytes();
-            debug_assert_eq!(_haystack, self.haystack);
-        } else if !self.at_start {
-            self.at_start = true;
-            let _haystack = self.haystack_cursor.prev().unwrap_or_default().as_bytes();
-            debug_assert_eq!(_haystack, self.haystack);
+        match self.cursor_pos {
+            CursorsPos::Start => (),
+            CursorsPos::End => {
+                let _haystack = self.haystack_cursor.prev().unwrap_or_default().as_bytes();
+                debug_assert_eq!(_haystack, self.haystack);
+            }
+            CursorsPos::Peeked => {
+                let _haystack = self.haystack_cursor.prev().unwrap_or_default().as_bytes();
+                debug_assert_eq!(_haystack, self.peeked_haystack.unwrap());
+                let _haystack = self.haystack_cursor.prev().unwrap_or_default().as_bytes();
+                debug_assert_eq!(_haystack, self.haystack);
+            }
         }
+        self.cursor_pos = CursorsPos::Start;
         let next_haystack = self.haystack_cursor.prev()?;
+        self.peeked_haystack = Some(self.haystack);
         self.haystack_off -= next_haystack.len();
         self.haystack = next_haystack.as_bytes();
         Some(self.haystack)
@@ -564,10 +590,7 @@ impl<'h> Input<'h> {
     /// ```
     #[inline]
     pub fn set_start(&mut self, start: usize) {
-        self.set_span(Span {
-            start,
-            ..self.get_span()
-        });
+        self.set_span(Span { start, ..self.get_span() });
     }
 
     /// Set the ending offset for the span for this search configuration.
@@ -593,10 +616,7 @@ impl<'h> Input<'h> {
     /// ```
     #[inline]
     pub fn set_end(&mut self, end: usize) {
-        self.set_span(Span {
-            end,
-            ..self.get_span()
-        });
+        self.set_span(Span { end, ..self.get_span() });
     }
 
     /// Set the anchor mode of a search.
@@ -763,7 +783,7 @@ impl<'h> Input<'h> {
     /// ```
     #[inline]
     pub fn get_earliest(&self) -> bool {
-        true
+        false
     }
 
     /// Return true if and only if this search can never return any other
@@ -837,11 +857,7 @@ impl<'h> Input<'h> {
     /// ```
     #[inline]
     pub fn is_char_boundary(&mut self, offset: usize) -> bool {
-        is_boundary(
-            self.move_to(offset)
-                .and_then(|i| self.haystack.get(i))
-                .copied(),
-        )
+        is_boundary(self.move_to(offset).and_then(|i| self.haystack.get(i)).copied())
     }
 }
 
@@ -851,13 +867,11 @@ impl core::fmt::Debug for Input<'_> {
 
         f.debug_struct("Input")
             .field("haystack", &DebugHaystack(self.haystack()))
+            .field("peek", &self.peeked_haystack.map(DebugHaystack))
             .field("span", &self.span)
             .field("anchored", &self.anchored)
             .field("earliest", &self.earliest)
-            .field(
-                "cursor",
-                &(self.haystack_off, self.at_start, &self.haystack_cursor),
-            )
+            .field("cursor", &(self.haystack_off, self.cursor_pos))
             .finish()
     }
 }

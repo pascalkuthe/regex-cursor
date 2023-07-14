@@ -6,3 +6,6 @@
 # everyone who runs the test benefits from these saved cases.
 cc 3152dced60f8c193302e2adbe9ebd67be558b4af65991b997e5f776920c0459f # shrinks to haystack = "", needle = ""
 cc 0a97b5285cbdc808df0e0e829c62fe77de165b9aaf8f15dc0d41a150407a4b01 # shrinks to haystack = "Y", needle = "Y"
+cc 3121032e282f21b11023cec49d0119661db16574d821f15b91400b6d66449702 # shrinks to haystack = "&&", needle = "&"
+cc f8813009c0bd8c6bdd386e9b17ce8bb83e513707c27985bc2757c56549c7290c # shrinks to haystack = ":a", needle = "$|:"
+cc 1cd08976b659689543c93e102417319e7dafe94333d0f2813f5c68dc935bb6cf # shrinks to haystack = "Σ /ⶠaAA ﷏00AAΣ/എ", needle = "/"

@@ -1,7 +1,5 @@
-use regex_automata::util::{
-    captures, look,
-    primitives::{PatternID, StateID},
-};
+use regex_automata::util::primitives::{PatternID, StateID};
+use regex_automata::util::{captures, look};
 
 /// An error that can occurred during the construction of a thompson NFA.
 ///
@@ -28,7 +26,6 @@ enum BuildErrorKind {
     /// An error that occurred while parsing a regular expression. Note that
     /// this error may be printed over multiple lines, and is generally
     /// intended to be end user readable on its own.
-    #[cfg(feature = "syntax")]
     Syntax(regex_syntax::Error),
     /// An error that occurs if the capturing groups provided to an NFA builder
     /// do not satisfy the documented invariants. For example, things like
@@ -74,7 +71,6 @@ enum BuildErrorKind {
     /// An error that occurs when one tries to build a reverse NFA with
     /// captures enabled. Currently, this isn't supported, but we probably
     /// should support it at some point.
-    #[cfg(feature = "syntax")]
     UnsupportedCaptures,
 }
 
@@ -95,70 +91,48 @@ impl BuildError {
         &self.kind
     }
 
-    #[cfg(feature = "syntax")]
     pub(crate) fn syntax(err: regex_syntax::Error) -> BuildError {
-        BuildError {
-            kind: BuildErrorKind::Syntax(err),
-        }
+        BuildError { kind: BuildErrorKind::Syntax(err) }
     }
 
     pub(crate) fn captures(err: captures::GroupInfoError) -> BuildError {
-        BuildError {
-            kind: BuildErrorKind::Captures(err),
-        }
+        BuildError { kind: BuildErrorKind::Captures(err) }
     }
 
     pub(crate) fn word(err: look::UnicodeWordBoundaryError) -> BuildError {
-        BuildError {
-            kind: BuildErrorKind::Word(err),
-        }
+        BuildError { kind: BuildErrorKind::Word(err) }
     }
 
     pub(crate) fn too_many_patterns(given: usize) -> BuildError {
         let limit = PatternID::LIMIT;
-        BuildError {
-            kind: BuildErrorKind::TooManyPatterns { given, limit },
-        }
+        BuildError { kind: BuildErrorKind::TooManyPatterns { given, limit } }
     }
 
     pub(crate) fn too_many_states(given: usize) -> BuildError {
         let limit = StateID::LIMIT;
-        BuildError {
-            kind: BuildErrorKind::TooManyStates { given, limit },
-        }
+        BuildError { kind: BuildErrorKind::TooManyStates { given, limit } }
     }
 
     pub(crate) fn exceeded_size_limit(limit: usize) -> BuildError {
-        BuildError {
-            kind: BuildErrorKind::ExceededSizeLimit { limit },
-        }
+        BuildError { kind: BuildErrorKind::ExceededSizeLimit { limit } }
     }
 
     pub(crate) fn invalid_capture_index(index: u32) -> BuildError {
-        BuildError {
-            kind: BuildErrorKind::InvalidCaptureIndex { index },
-        }
+        BuildError { kind: BuildErrorKind::InvalidCaptureIndex { index } }
     }
 
     pub(crate) fn missing_captures() -> BuildError {
-        BuildError {
-            kind: BuildErrorKind::MissingCaptures,
-        }
+        BuildError { kind: BuildErrorKind::MissingCaptures }
     }
 
-    #[cfg(feature = "syntax")]
     pub(crate) fn unsupported_captures() -> BuildError {
-        BuildError {
-            kind: BuildErrorKind::UnsupportedCaptures,
-        }
+        BuildError { kind: BuildErrorKind::UnsupportedCaptures }
     }
 }
 
-#[cfg(feature = "std")]
 impl std::error::Error for BuildError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self.kind() {
-            #[cfg(feature = "syntax")]
             BuildErrorKind::Syntax(ref err) => Some(err),
             BuildErrorKind::Captures(ref err) => Some(err),
             _ => None,
@@ -169,7 +143,6 @@ impl std::error::Error for BuildError {
 impl core::fmt::Display for BuildError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self.kind() {
-            #[cfg(feature = "syntax")]
             BuildErrorKind::Syntax(_) => write!(f, "error parsing regex"),
             BuildErrorKind::Captures(_) => {
                 write!(f, "error with capture groups")
@@ -189,22 +162,17 @@ impl core::fmt::Display for BuildError {
                  which exceeds the limit of {}",
                 given, limit,
             ),
-            BuildErrorKind::ExceededSizeLimit { limit } => write!(
-                f,
-                "heap usage during NFA compilation exceeded limit of {}",
-                limit,
-            ),
-            BuildErrorKind::InvalidCaptureIndex { index } => write!(
-                f,
-                "capture group index {} is invalid (too big or discontinuous)",
-                index,
-            ),
+            BuildErrorKind::ExceededSizeLimit { limit } => {
+                write!(f, "heap usage during NFA compilation exceeded limit of {}", limit,)
+            }
+            BuildErrorKind::InvalidCaptureIndex { index } => {
+                write!(f, "capture group index {} is invalid (too big or discontinuous)", index,)
+            }
             BuildErrorKind::MissingCaptures => write!(
                 f,
                 "operation requires the NFA to have capturing groups, \
                  but the NFA given contains none",
             ),
-            #[cfg(feature = "syntax")]
             BuildErrorKind::UnsupportedCaptures => write!(
                 f,
                 "currently captures must be disabled when compiling \

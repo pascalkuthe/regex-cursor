@@ -15,7 +15,8 @@ happens at search time, for example, in the PikeVM. It also happens during DFA
 determinization.
 */
 
-use std::{vec, vec::Vec};
+use std::vec;
+use std::vec::Vec;
 
 use regex_automata::util::primitives::StateID;
 
@@ -43,10 +44,7 @@ impl SparseSets {
     ///
     /// This panics if the capacity given is bigger than `StateID::LIMIT`.
     pub(crate) fn new(capacity: usize) -> SparseSets {
-        SparseSets {
-            set1: SparseSet::new(capacity),
-            set2: SparseSet::new(capacity),
-        }
+        SparseSets { set1: SparseSet::new(capacity), set2: SparseSet::new(capacity) }
     }
 
     /// Resizes these sparse sets to have the new capacity given.
@@ -115,11 +113,7 @@ impl SparseSet {
     /// This panics if the capacity given is bigger than `StateID::LIMIT`.
     #[inline]
     pub(crate) fn new(capacity: usize) -> SparseSet {
-        let mut set = SparseSet {
-            len: 0,
-            dense: vec![],
-            sparse: vec![],
-        };
+        let mut set = SparseSet { len: 0, dense: vec![], sparse: vec![] };
         set.resize(capacity);
         set
     }

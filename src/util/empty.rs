@@ -231,11 +231,7 @@ where
     // out that case in every regex engine to save a tiny bit of work in an
     // extremely pathological case, so we just handle it here.
     if input.get_anchored().is_anchored() {
-        return Ok(if input.is_char_boundary(match_offset) {
-            Some(init_value)
-        } else {
-            None
-        });
+        return Ok(if input.is_char_boundary(match_offset) { Some(init_value) } else { None });
     }
     // Otherwise, we have an unanchored search, so just keep looking for
     // matches until we have one that does not split a codepoint or we hit

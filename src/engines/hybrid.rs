@@ -70,11 +70,7 @@ pub fn find_iter<'r, 'c, 'h, I: Into<Input<'h>>>(
     input: I,
 ) -> FindMatches<'r, 'c, 'h> {
     let it = iter::Searcher::new(input.into());
-    FindMatches {
-        re: regex,
-        cache,
-        it,
-    }
+    FindMatches { re: regex, cache, it }
 }
 
 /// Returns the start and end offset of the leftmost match. If no match
@@ -196,11 +192,8 @@ pub fn try_search(
     // much as we can. We also need to be careful to make the search
     // anchored. We don't want the reverse search to report any matches
     // other than the one beginning at the end of our forward search.
-    let mut revsearch = input
-        .clone()
-        .span(input.start()..end.offset())
-        .anchored(Anchored::Yes)
-        .earliest(false);
+    let mut revsearch =
+        input.clone().span(input.start()..end.offset()).anchored(Anchored::Yes).earliest(false);
     let start = dfa::try_search_rev(regex.reverse(), rcache, &mut revsearch)?
         .expect("reverse search must match if forward search does");
     debug_assert_eq!(
@@ -209,10 +202,9 @@ pub fn try_search(
         "forward and reverse search must match same pattern",
     );
     debug_assert!(start.offset() <= end.offset());
-    Ok(Some(Match::new(
-        end.pattern(),
-        start.offset()..end.offset(),
-    )))
+    debug_assert!(end.offset() <= input.end());
+    debug_assert!(input.start() <= start.offset());
+    Ok(Some(Match::new(end.pattern(), start.offset()..end.offset())))
 }
 
 /// An iterator over all non-overlapping matches for an infallible search.
@@ -239,11 +231,7 @@ impl<'r, 'c, 'h> Iterator for FindMatches<'r, 'c, 'h> {
 
     #[inline]
     fn next(&mut self) -> Option<Match> {
-        let FindMatches {
-            re,
-            ref mut cache,
-            ref mut it,
-        } = *self;
+        let FindMatches { re, ref mut cache, ref mut it } = *self;
         it.advance(|input| try_search(re, cache, input))
     }
 }

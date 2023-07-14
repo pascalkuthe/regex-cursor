@@ -10,8 +10,9 @@ Currently, this module supports iteration over any regex engine that works
 with the [`HalfMatch`], [`Match`] or [`Captures`] types.
 */
 
-use crate::input::Input;
 use regex_automata::{HalfMatch, Match, MatchError};
+
+use crate::input::Input;
 
 /// A searcher for creating iterators and performing lower level iteration.
 ///
@@ -162,10 +163,7 @@ impl<'h> Searcher<'h> {
     /// engine. The closure may borrow any additional state that is needed,
     /// such as a prefilter scanner.
     pub fn new(input: Input<'h>) -> Searcher<'h> {
-        Searcher {
-            input,
-            last_match_end: None,
-        }
+        Searcher { input, last_match_end: None }
     }
 
     /// Returns the current `Input` used by this searcher.
@@ -601,11 +599,7 @@ impl<'h> Searcher<'h> {
     where
         F: FnMut(&mut Input<'_>, &mut Captures) -> Result<(), MatchError>,
     {
-        TryCapturesIter {
-            it: self,
-            caps,
-            finder,
-        }
+        TryCapturesIter { it: self, caps, finder }
     }
 
     /// Handles the special case of a match that begins where the previous
@@ -632,8 +626,7 @@ impl<'h> Searcher<'h> {
         // regex engines themselves are expected to deal with that and not
         // report any matches within a codepoint if they are configured in
         // UTF-8 mode.
-        self.input
-            .set_start(self.input.start().checked_add(1).unwrap());
+        self.input.set_start(self.input.start().checked_add(1).unwrap());
         finder(&mut self.input)
     }
 
@@ -669,8 +662,7 @@ impl<'h> Searcher<'h> {
         F: FnMut(&mut Input<'_>) -> Result<Option<Match>, MatchError>,
     {
         assert!(m.is_empty());
-        self.input
-            .set_start(self.input.start().checked_add(1).unwrap());
+        self.input.set_start(self.input.start().checked_add(1).unwrap());
         finder(&mut self.input)
     }
 }
@@ -952,11 +944,7 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Result<Captures, MatchError>> {
-        let TryCapturesIter {
-            ref mut it,
-            ref mut caps,
-            ref mut finder,
-        } = *self;
+        let TryCapturesIter { ref mut it, ref mut caps, ref mut finder } = *self;
         let result = it
             .try_advance(|input| {
                 (finder)(input, caps)?;

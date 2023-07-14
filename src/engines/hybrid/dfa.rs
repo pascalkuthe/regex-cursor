@@ -1,11 +1,7 @@
-use regex_automata::{
-    hybrid::{
-        dfa::{Cache, DFA},
-        LazyStateID,
-    },
-    util::prefilter::Prefilter,
-    HalfMatch, MatchError,
-};
+use regex_automata::hybrid::dfa::{Cache, DFA};
+use regex_automata::hybrid::LazyStateID;
+use regex_automata::util::prefilter::Prefilter;
+use regex_automata::{HalfMatch, MatchError};
 
 use crate::input::Input;
 use crate::util::empty::{skip_splits_fwd, skip_splits_rev};
@@ -368,11 +364,8 @@ pub(crate) fn find_fwd(
     if input.is_done() {
         return Ok(None);
     }
-    let pre = if input.get_anchored().is_anchored() {
-        None
-    } else {
-        dfa.get_config().get_prefilter()
-    };
+    let pre =
+        if input.get_anchored().is_anchored() { None } else { dfa.get_config().get_prefilter() };
     // So what we do here is specialize four different versions of 'find_fwd':
     // one for each of the combinations for 'has prefilter' and 'is earliest
     // search'. The reason for doing this is that both of these things require
@@ -567,8 +560,10 @@ fn find_fwd_imp(
                     break;
                 }
                 chunk_pos += 1;
-                if chunk_pos + 3 >= input.haystack().len() {
-                    continue;
+                if chunk_pos >= input.haystack().len() {
+                    debug_assert_eq!(chunk_pos, input.haystack().len());
+                    chunk_pos = 0;
+                    input.advance_fwd();
                 }
 
                 sid = unsafe { next_unchecked!(prev_sid) };
@@ -576,6 +571,9 @@ fn find_fwd_imp(
                     break;
                 }
                 chunk_pos += 1;
+                if chunk_pos + 3 >= input.haystack().len() {
+                    continue;
+                }
 
                 prev_sid = unsafe { next_unchecked!(sid) };
                 if prev_sid.is_tagged() {
@@ -726,6 +724,7 @@ fn find_rev_imp(
     }
     cache.search_start(at!());
     loop {
+        println!("xo {}", at!());
         if sid.is_tagged() {
             cache.search_update(at!());
             sid = dfa
@@ -758,18 +757,16 @@ fn find_rev_imp(
             while at!() >= input.start() {
                 prev_sid = unsafe { next_unchecked!(sid) };
                 if prev_sid.is_tagged() || at!() <= input.start().saturating_add(3) {
+                    println!("instant break {} {:?} {:?}", at!(), prev_sid, sid);
                     core::mem::swap(&mut prev_sid, &mut sid);
                     break;
                 }
                 chunk_pos -= 1;
-                if chunk_pos < 3 {
-                    if chunk_pos == 0 {
-                        let Some(new_chunk) = input.advance_rev() else {
-                            break;
-                        };
-                        chunk_pos = new_chunk.len() - 1;
-                    }
-                    continue;
+                if chunk_pos == 0 {
+                    let Some(new_chunk) = input.advance_rev() else {
+                        break;
+                    };
+                    chunk_pos = new_chunk.len() - 1;
                 }
 
                 sid = unsafe { next_unchecked!(prev_sid) };
@@ -777,6 +774,14 @@ fn find_rev_imp(
                     break;
                 }
                 chunk_pos -= 1;
+                if chunk_pos == 0 {
+                    let Some(new_chunk) = input.advance_rev() else {
+                        break;
+                    };
+                    chunk_pos = new_chunk.len() - 1;
+                } else if chunk_pos < 2 {
+                    continue;
+                }
 
                 prev_sid = unsafe { next_unchecked!(sid) };
                 if prev_sid.is_tagged() {
@@ -795,11 +800,13 @@ fn find_rev_imp(
             // any point, then we need to re-compute that transition using
             // 'next_state', which will do NFA powerset construction for us.
             if sid.is_unknown() {
+                println!("unkown {chunk_pos}");
                 cache.search_update(at!());
                 sid = dfa
                     .next_state(cache, prev_sid, input.haystack()[chunk_pos])
                     .map_err(|_| gave_up(at!()))?;
             }
+            println!("{sid:?}");
         }
         if sid.is_tagged() {
             if sid.is_start() {
@@ -815,6 +822,7 @@ fn find_rev_imp(
                     return Ok(mat);
                 }
             } else if sid.is_dead() {
+                println!("dead {}", at!());
                 cache.search_finish(at!());
                 return Ok(mat);
             } else if sid.is_quit() {
@@ -836,6 +844,7 @@ fn find_rev_imp(
         };
         chunk_pos -= 1;
     }
+    println!("xo2 {}", at!());
     cache.search_finish(input.start());
     eoi_rev(dfa, cache, input, &mut sid, &mut mat)?;
     Ok(mat)
@@ -869,7 +878,7 @@ fn init_rev(
     let sid = dfa.start_state_reverse_with(
         cache,
         input.get_anchored(),
-        input.look_behind(),
+        input.look_ahead(),
         input.get_span(),
     )?;
     // Start states can never be match states, since all matches are delayed
@@ -890,9 +899,7 @@ fn eoi_fwd(
     let sp = input.get_span();
     match input.look_ahead() {
         Some(b) => {
-            *sid = dfa
-                .next_state(cache, *sid, b)
-                .map_err(|_| gave_up(sp.end))?;
+            *sid = dfa.next_state(cache, *sid, b).map_err(|_| gave_up(sp.end))?;
             if sid.is_match() {
                 let pattern = dfa.match_pattern(cache, *sid, 0);
                 *mat = Some(HalfMatch::new(pattern, sp.end));
@@ -901,9 +908,7 @@ fn eoi_fwd(
             }
         }
         None => {
-            *sid = dfa
-                .next_eoi_state(cache, *sid)
-                .map_err(|_| gave_up(sp.end))?;
+            *sid = dfa.next_eoi_state(cache, *sid).map_err(|_| gave_up(sp.end))?;
             if sid.is_match() {
                 let pattern = dfa.match_pattern(cache, *sid, 0);
                 *mat = Some(HalfMatch::new(pattern, sp.end));
@@ -927,9 +932,7 @@ fn eoi_rev(
     let sp = input.get_span();
     // debug_assert_eq!(sp.start, 0);
     if let Some(byte) = input.look_behind() {
-        *sid = dfa
-            .next_state(cache, *sid, byte)
-            .map_err(|_| gave_up(sp.start))?;
+        *sid = dfa.next_state(cache, *sid, byte).map_err(|_| gave_up(sp.start))?;
         if sid.is_match() {
             let pattern = dfa.match_pattern(cache, *sid, 0);
             *mat = Some(HalfMatch::new(pattern, sp.start));
@@ -937,13 +940,11 @@ fn eoi_rev(
             return Err(MatchError::quit(byte, sp.start - 1));
         }
     } else {
-        *sid = dfa
-            .next_eoi_state(cache, *sid)
-            .map_err(|_| gave_up(sp.start))?;
-    }
-    if sid.is_match() {
-        let pattern = dfa.match_pattern(cache, *sid, 0);
-        *mat = Some(HalfMatch::new(pattern, 0));
+        *sid = dfa.next_eoi_state(cache, *sid).map_err(|_| gave_up(sp.start))?;
+        if sid.is_match() {
+            let pattern = dfa.match_pattern(cache, *sid, 0);
+            *mat = Some(HalfMatch::new(pattern, 0));
+        }
     }
     // N.B. We don't have to check 'is_quit' here because the EOI
     // transition can never lead to a quit state.

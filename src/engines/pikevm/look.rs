@@ -50,9 +50,7 @@ pub struct LookMatcher {
 impl LookMatcher {
     /// Creates a new default matcher for look-around assertions.
     pub fn new() -> LookMatcher {
-        LookMatcher {
-            lineterm: DebugByte(b'\n'),
-        }
+        LookMatcher { lineterm: DebugByte(b'\n') }
     }
 
     /// Sets the line terminator for use with `(?m:^)` and `(?m:$)`.
@@ -126,9 +124,9 @@ impl LookMatcher {
             Look::WordAscii => self.is_word_ascii(prev_haystack, input, at),
             Look::WordAsciiNegate => self.is_word_ascii_negate(prev_haystack, input, at),
             Look::WordUnicode => self.is_word_unicode(prev_haystack, input, at).unwrap(),
-            Look::WordUnicodeNegate => self
-                .is_word_unicode_negate(prev_haystack, input, at)
-                .unwrap(),
+            Look::WordUnicodeNegate => {
+                self.is_word_unicode_negate(prev_haystack, input, at).unwrap()
+            }
         }
     }
 
@@ -221,10 +219,7 @@ impl LookMatcher {
             }
         }
         if set.contains(Look::WordUnicodeNegate) {
-            if !self
-                .is_word_unicode_negate(prev_haystack, input, at)
-                .unwrap()
-            {
+            if !self.is_word_unicode_negate(prev_haystack, input, at).unwrap() {
                 return false;
             }
         }
@@ -341,7 +336,7 @@ impl LookMatcher {
     /// haystack.len()` is legal and guaranteed not to panic.
     #[inline]
     pub fn is_start_crlf(&self, prev_haystack: &[u8], input: &mut Input, at: usize) -> bool {
-        let Some(prev) = prev_byte(prev_haystack, input , at) else { return true };
+        let Some(prev) = prev_byte(prev_haystack, input, at) else { return true };
         prev == b'\n' || prev == b'\r' && input.haystack().get(at).map_or(true, |&it| it != b'\r')
     }
 
@@ -354,7 +349,7 @@ impl LookMatcher {
     /// haystack.len()` is legal and guaranteed not to panic.
     #[inline]
     pub fn is_end_crlf(&self, prev_haystack: &[u8], input: &mut Input, at: usize) -> bool {
-        let Some(byte) = get_byte(input , at) else { return true };
+        let Some(byte) = get_byte(input, at) else { return true };
         byte == b'\r'
             || byte == b'\n'
                 && prev_byte(prev_haystack, &input, at).map_or(true, |byte| byte != b'\r')
@@ -369,8 +364,8 @@ impl LookMatcher {
     /// haystack.len()` is legal and guaranteed not to panic.
     #[inline]
     pub fn is_word_ascii(&self, prev_haystack: &[u8], input: &mut Input, at: usize) -> bool {
-        let word_before = prev_byte(prev_haystack, &input, at).map_or(false, is_word_byte);
-        let word_after = prev_byte(prev_haystack, &input, at).map_or(false, is_word_byte);
+        let word_before = prev_byte(prev_haystack, input, at).map_or(false, is_word_byte);
+        let word_after = get_byte(input, at).map_or(false, is_word_byte);
         word_before != word_after
     }
 
