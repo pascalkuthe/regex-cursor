@@ -114,7 +114,7 @@ impl<'h> Input<'h> {
     }
 
     /// Return a borrow of the current underlying haystack as a slice of bytes.
-    /// Automatically resizes the first and the last haystack to stay within span bounderies
+    /// Automatically resizes the last haystack to stay within span bounderies
     ///
     /// # Example
     ///
@@ -125,10 +125,48 @@ impl<'h> Input<'h> {
     /// assert_eq!(b"oobar", input.haystack());
     /// ```
     #[inline]
-    pub fn haystack_truncated(&self) -> &'h [u8] {
+    pub fn haystack_fwd_truncated(&self) -> &'h [u8] {
         let end = self.end() - self.haystack_off;
         if end < self.haystack.len() {
             return &self.haystack[..end];
+        }
+        self.haystack
+    }
+
+    /// Return a borrow of the current underlying haystack as a slice of bytes.
+    /// Automatically resizes the first haystack to stay within span bounderies
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ropey_regex::Input;
+    ///
+    /// let input = Input::new("foobar").range(1..);
+    /// assert_eq!(b"oobar", input.haystack());
+    /// ```
+    #[inline]
+    pub fn haystack_rev_truncated(&self) -> &'h [u8] {
+        if self.haystack_off < self.start() {
+            return &self.haystack[self.start() - self.haystack_off..];
+        }
+        self.haystack
+    }
+
+    /// Return a borrow of the current underlying haystack as a slice of bytes.
+    /// Automatically resizes the first haystack to stay within span bounderies
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ropey_regex::Input;
+    ///
+    /// let input = Input::new("foobar").range(1..);
+    /// assert_eq!(b"oobar", input.haystack());
+    /// ```
+    #[inline]
+    pub fn haystack_rev_truncated_with_end(&self, end: usize) -> &'h [u8] {
+        if self.haystack_off < self.start() {
+            return &self.haystack[self.start() - self.haystack_off..end];
         }
         self.haystack
     }

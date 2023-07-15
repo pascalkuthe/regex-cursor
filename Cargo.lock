@@ -288,7 +288,6 @@ dependencies = [
 name = "ropey_regex"
 version = "0.1.0"
 dependencies = [
- "aho-corasick",
  "memchr",
  "proptest",
  "regex-automata",

@@ -75,7 +75,7 @@ impl Prefilter {
     fn find_1(&self, input: &mut Input) -> Option<Span> {
         debug_assert_eq!(self.max_needle_len, 1);
         let start = input.move_to(input.start())?;
-        let first_haystack = input.haystack_truncated();
+        let first_haystack = input.haystack_fwd_truncated();
         if let Some(mut res) =
             self.inner.find(first_haystack, Span { start, end: first_haystack.len() })
         {
@@ -85,7 +85,7 @@ impl Prefilter {
         }
         loop {
             input.advance_fwd()?;
-            let haystack = input.haystack_truncated();
+            let haystack = input.haystack_fwd_truncated();
             let Some(mut res) =
                 self.inner.find(haystack, Span { start: 0, end: first_haystack.len() })
             else {
@@ -104,7 +104,7 @@ impl Prefilter {
         debug_assert!(carry_over <= ROPEY_MIN_CHUNK_LEN);
         let mut buf = Vec::with_capacity(self.max_needle_len * 2 - 2);
         let start = input.move_to(input.start())?;
-        let first_haystack = input.haystack_truncated();
+        let first_haystack = input.haystack_fwd_truncated();
         if let Some(mut res) =
             self.inner.find(first_haystack, Span { start, end: first_haystack.len() })
         {
@@ -114,7 +114,7 @@ impl Prefilter {
         }
         let prev_haystack_off = input.haystack_off();
         input.advance_fwd()?;
-        let haystack = input.haystack_truncated();
+        let haystack = input.haystack_fwd_truncated();
         let carry_over_start = first_haystack.len().saturating_sub(carry_over);
         buf.extend_from_slice(&first_haystack[carry_over_start..]);
         buf.extend_from_slice(&haystack[..carry_over.min(haystack.len())]);
@@ -124,7 +124,7 @@ impl Prefilter {
             return Some(res);
         }
         loop {
-            let haystack = input.haystack_truncated();
+            let haystack = input.haystack_fwd_truncated();
             if let Some(mut res) = self.inner.find(haystack, Span { start: 0, end: haystack.len() })
             {
                 res.start += input.haystack_off();
@@ -136,7 +136,7 @@ impl Prefilter {
             let prev_haystack_off = input.haystack_off();
             input.advance_fwd()?;
             let carry_over_start = prev_haystack.len().saturating_sub(carry_over);
-            let haystack = input.haystack_truncated();
+            let haystack = input.haystack_fwd_truncated();
             buf.extend_from_slice(&prev_haystack[prev_haystack.len().saturating_sub(carry_over)..]);
             buf.extend_from_slice(&haystack[..carry_over.min(haystack.len())]);
             if let Some(mut res) = self.inner.find(&buf, Span { start: 0, end: buf.len() }) {

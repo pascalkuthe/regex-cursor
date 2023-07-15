@@ -398,31 +398,28 @@ fn find_fwd_imp(
     // See 'prefilter_restart' docs for explanation.
     let universal_start = dfa.get_nfa().look_set_prefix_any().is_empty();
     let mut mat = None;
-    let (mut chunk_pos, mut sid) = init_fwd(dfa, cache, input)?;
+    let (mut chunk_at, mut sid) = init_fwd(dfa, cache, input)?;
     // This could just be a closure, but then I think it would be unsound
     // because it would need to be safe to invoke. This way, the lack of safety
     // is clearer in the code below.
     macro_rules! next_unchecked {
         ($sid:expr) => {{
-            debug_assert!(chunk_pos < input.haystack().len());
-            let byte = *input.haystack().get_unchecked(chunk_pos);
+            debug_assert!(chunk_at < input.haystack().len());
+            let byte = *input.haystack().get_unchecked(chunk_at);
             dfa.next_state_untagged_unchecked(cache, $sid, byte)
         }};
     }
     macro_rules! at {
         () => {
-            input.haystack_off() + chunk_pos
+            input.haystack_off() + chunk_at
         };
     }
     #[rustfmt::skip]
-    macro_rules! check_in_bounds {
+    macro_rules! ensure_chunk {
         () => {
-            if at!() >= input.end() {
-                break;
-            }
-            if chunk_pos >= input.haystack().len() {
-                debug_assert_eq!(chunk_pos, input.haystack().len());
-                chunk_pos = 0;
+            if chunk_at >= input.haystack().len() {
+                debug_assert_eq!(chunk_at, input.haystack().len());
+                chunk_at = 0;
                 input.advance_fwd();
             }
         };
@@ -441,12 +438,12 @@ fn find_fwd_imp(
     //     }
     // }
     cache.search_start(at!());
-    loop {
-        check_in_bounds!();
+    while at!() < input.end() {
         if sid.is_tagged() {
+            ensure_chunk!();
             cache.search_update(at!());
             sid = dfa
-                .next_state(cache, sid, input.haystack()[chunk_pos])
+                .next_state(cache, sid, input.haystack()[chunk_at])
                 .map_err(|_| gave_up(at!()))?;
         } else {
             // SAFETY: There are two safety invariants we need to uphold
@@ -552,41 +549,37 @@ fn find_fwd_imp(
             // So I've removed the second loop unrolling that targets the
             // self-transition case.
             let mut prev_sid = sid;
-            loop {
-                check_in_bounds!();
+            while at!() < input.end() {
+                ensure_chunk!();
                 prev_sid = unsafe { next_unchecked!(sid) };
                 if prev_sid.is_tagged() || at!() + 3 >= input.end() {
                     core::mem::swap(&mut prev_sid, &mut sid);
                     break;
                 }
-                chunk_pos += 1;
-                if chunk_pos >= input.haystack().len() {
-                    debug_assert_eq!(chunk_pos, input.haystack().len());
-                    chunk_pos = 0;
-                    input.advance_fwd();
+                chunk_at += 1;
+                if chunk_at + 2 >= input.haystack().len() {
+                    core::mem::swap(&mut prev_sid, &mut sid);
+                    continue;
                 }
 
                 sid = unsafe { next_unchecked!(prev_sid) };
                 if sid.is_tagged() {
                     break;
                 }
-                chunk_pos += 1;
-                if chunk_pos + 3 >= input.haystack().len() {
-                    continue;
-                }
+                chunk_at += 1;
 
                 prev_sid = unsafe { next_unchecked!(sid) };
                 if prev_sid.is_tagged() {
                     core::mem::swap(&mut prev_sid, &mut sid);
                     break;
                 }
-                chunk_pos += 1;
+                chunk_at += 1;
 
                 sid = unsafe { next_unchecked!(prev_sid) };
                 if sid.is_tagged() {
                     break;
                 }
-                chunk_pos += 1;
+                chunk_at += 1;
             }
             // If we quit out of the code above with an unknown state ID at
             // any point, then we need to re-compute that transition using
@@ -594,14 +587,14 @@ fn find_fwd_imp(
             if sid.is_unknown() {
                 cache.search_update(at!());
                 sid = dfa
-                    .next_state(cache, prev_sid, input.haystack()[chunk_pos])
-                    .map_err(|_| gave_up(chunk_pos))?;
+                    .next_state(cache, prev_sid, input.haystack()[chunk_at])
+                    .map_err(|_| gave_up(chunk_at))?;
             }
         }
         if sid.is_tagged() {
             if sid.is_start() {
                 // if let Some(ref pre) = pre {
-                //     let span = Span::from(chunk_pos..input.end());
+                //     let span = Span::from(chunk_at..input.end());
                 //     match pre.find(input.haystack(), span) {
                 //         None => {
                 //             cache.search_finish(span.end);
@@ -617,10 +610,10 @@ fn find_fwd_imp(
                 //             // ... but only if we actually made progress
                 //             // with our prefilter, otherwise if the start
                 //             // state has a self-loop, we can get stuck.
-                //             if span.start > chunk_pos {
-                //                 chunk_pos = span.start;
+                //             if span.start > chunk_at {
+                //                 chunk_at = span.start;
                 //                 if !universal_start {
-                //                     sid = prefilter_restart(dfa, cache, &input, chunk_pos)?;
+                //                     sid = prefilter_restart(dfa, cache, &input, chunk_at)?;
                 //                 }
                 //                 continue;
                 //             }
@@ -651,7 +644,7 @@ fn find_fwd_imp(
                 unreachable!("sid being unknown is a bug");
             }
         }
-        chunk_pos += 1;
+        chunk_at += 1;
     }
     eoi_fwd(dfa, cache, input, &mut sid, &mut mat)?;
     cache.search_finish(input.end());
@@ -682,7 +675,7 @@ fn find_rev_imp(
     earliest: bool,
 ) -> Result<Option<HalfMatch>, MatchError> {
     let mut mat = None;
-    let (mut chunk_pos, mut sid) = init_rev(dfa, cache, input)?;
+    let (mut chunk_at, mut sid) = init_rev(dfa, cache, input)?;
     // In reverse search, the loop below can't handle the case of searching an
     // empty slice. Ideally we could write something congruent to the forward
     // search, i.e., 'while at >= start', but 'start' might be 0. Since we use
@@ -699,36 +692,32 @@ fn find_rev_imp(
     // is clearer in the code below.
     macro_rules! next_unchecked {
         ($sid:expr) => {{
-            let byte = *input.haystack().get_unchecked(chunk_pos);
+            let byte = *input.haystack().get_unchecked(chunk_at);
             dfa.next_state_untagged_unchecked(cache, $sid, byte)
         }};
     }
     macro_rules! at {
         () => {
-            input.haystack_off() + chunk_pos
+            input.haystack_off() + chunk_at
         };
     }
     #[rustfmt::skip]
-    macro_rules! check_in_bounds {
+    macro_rules! ensure_in_chunk {
         () => {
-            if at!() <= input.start() {
-                break;
-            }
-            if chunk_pos == 0 {
+            if chunk_at == 0 {
                 let Some(new_chunk) = input.advance_rev() else{
                     break;
                 };
-                chunk_pos = new_chunk.len() - 1;
+                chunk_at = new_chunk.len() - 1;
             }
         };
     }
     cache.search_start(at!());
     loop {
-        println!("xo {}", at!());
         if sid.is_tagged() {
             cache.search_update(at!());
             sid = dfa
-                .next_state(cache, sid, input.haystack()[chunk_pos])
+                .next_state(cache, sid, input.haystack()[chunk_at])
                 .map_err(|_| gave_up(at!()))?;
         } else {
             // SAFETY: See comments in 'find_fwd' for a safety argument.
@@ -757,56 +746,45 @@ fn find_rev_imp(
             while at!() >= input.start() {
                 prev_sid = unsafe { next_unchecked!(sid) };
                 if prev_sid.is_tagged() || at!() <= input.start().saturating_add(3) {
-                    println!("instant break {} {:?} {:?}", at!(), prev_sid, sid);
                     core::mem::swap(&mut prev_sid, &mut sid);
                     break;
                 }
-                chunk_pos -= 1;
-                if chunk_pos == 0 {
-                    let Some(new_chunk) = input.advance_rev() else {
-                        break;
-                    };
-                    chunk_pos = new_chunk.len() - 1;
+                chunk_at -= 1;
+                if chunk_at <= 2 {
+                    core::mem::swap(&mut prev_sid, &mut sid);
+                    ensure_in_chunk!();
+                    continue;
                 }
 
                 sid = unsafe { next_unchecked!(prev_sid) };
                 if sid.is_tagged() {
                     break;
                 }
-                chunk_pos -= 1;
-                if chunk_pos == 0 {
-                    let Some(new_chunk) = input.advance_rev() else {
-                        break;
-                    };
-                    chunk_pos = new_chunk.len() - 1;
-                } else if chunk_pos < 2 {
-                    continue;
-                }
+                chunk_at -= 1;
 
                 prev_sid = unsafe { next_unchecked!(sid) };
                 if prev_sid.is_tagged() {
                     core::mem::swap(&mut prev_sid, &mut sid);
                     break;
                 }
-                chunk_pos -= 1;
+                chunk_at -= 1;
 
                 sid = unsafe { next_unchecked!(prev_sid) };
                 if sid.is_tagged() {
                     break;
                 }
-                chunk_pos -= 1;
+                chunk_at -= 1;
+                ensure_in_chunk!();
             }
             // If we quit out of the code above with an unknown state ID at
             // any point, then we need to re-compute that transition using
             // 'next_state', which will do NFA powerset construction for us.
             if sid.is_unknown() {
-                println!("unkown {chunk_pos}");
                 cache.search_update(at!());
                 sid = dfa
-                    .next_state(cache, prev_sid, input.haystack()[chunk_pos])
+                    .next_state(cache, prev_sid, input.haystack()[chunk_at])
                     .map_err(|_| gave_up(at!()))?;
             }
-            println!("{sid:?}");
         }
         if sid.is_tagged() {
             if sid.is_start() {
@@ -822,12 +800,11 @@ fn find_rev_imp(
                     return Ok(mat);
                 }
             } else if sid.is_dead() {
-                println!("dead {}", at!());
                 cache.search_finish(at!());
                 return Ok(mat);
             } else if sid.is_quit() {
                 cache.search_finish(at!());
-                return Err(MatchError::quit(input.haystack()[chunk_pos], at!()));
+                return Err(MatchError::quit(input.haystack()[chunk_at], at!()));
             } else {
                 debug_assert!(sid.is_unknown());
                 unreachable!("sid being unknown is a bug");
@@ -836,15 +813,9 @@ fn find_rev_imp(
         if at!() <= input.start() {
             break;
         }
-        if chunk_pos == 0 {
-            let Some(new_chunk) = input.advance_rev() else {
-                break;
-            };
-            chunk_pos = new_chunk.len() - 1;
-        };
-        chunk_pos -= 1;
+        ensure_in_chunk!();
+        chunk_at -= 1;
     }
-    println!("xo2 {}", at!());
     cache.search_finish(input.start());
     eoi_rev(dfa, cache, input, &mut sid, &mut mat)?;
     Ok(mat)
@@ -945,11 +916,10 @@ fn eoi_rev(
             let pattern = dfa.match_pattern(cache, *sid, 0);
             *mat = Some(HalfMatch::new(pattern, 0));
         }
+        // N.B. We don't have to check 'is_quit' here because the EOI
+        // transition can never lead to a quit state.
+        debug_assert!(!sid.is_quit());
     }
-    // N.B. We don't have to check 'is_quit' here because the EOI
-    // transition can never lead to a quit state.
-    debug_assert!(!sid.is_quit());
-    // }
     Ok(())
 }
 
