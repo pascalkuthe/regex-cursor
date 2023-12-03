@@ -1,16 +1,18 @@
 pub use regex_automata::hybrid::regex::{Cache, Regex};
 use regex_automata::{Anchored, Match, MatchError};
 
+use crate::cursor::Cursor;
+use crate::engines::hybrid::search::try_search_fwd;
 use crate::input::Input;
 use crate::util::iter;
 
-mod dfa;
+mod search;
 #[cfg(test)]
 mod test;
 
 /// Returns true if either the given input specifies an anchored search
 /// or if the underlying NFA is always anchored.
-fn is_anchored(regex: &Regex, input: &Input<'_>) -> bool {
+fn is_anchored(regex: &Regex, input: &Input<impl Cursor>) -> bool {
     match input.get_anchored() {
         Anchored::No => regex.forward().get_nfa().is_always_start_anchored(),
         Anchored::Yes | Anchored::Pattern(_) => true,
@@ -64,12 +66,12 @@ fn is_anchored(regex: &Regex, input: &Input<'_>) -> bool {
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[inline]
-pub fn find_iter<'r, 'c, 'h, I: Into<Input<'h>>>(
+pub fn find_iter<'r, 'c, 'h, C: Cursor>(
     regex: &'r Regex,
     cache: &'c mut Cache,
-    input: I,
-) -> FindMatches<'r, 'c, 'h> {
-    let it = iter::Searcher::new(input.into());
+    input: Input<C>,
+) -> FindMatches<'r, 'c, C> {
+    let it = iter::Searcher::new(input);
     FindMatches { re: regex, cache, it }
 }
 
@@ -118,7 +120,7 @@ pub fn find_iter<'r, 'c, 'h, I: Into<Input<'h>>>(
 /// assert_eq!(Some(Match::must(0, 0..3)), re.find(&mut cache, "abc"));
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
-pub fn find(regex: &Regex, cache: &mut Cache, input: &mut Input<'_>) -> Option<Match> {
+pub fn find<C: Cursor>(regex: &Regex, cache: &mut Cache, input: &mut Input<C>) -> Option<Match> {
     try_search(regex, cache, input).unwrap()
 }
 
@@ -151,13 +153,13 @@ pub fn find(regex: &Regex, cache: &mut Cache, input: &mut Input<'_>) -> Option<M
 ///
 /// When a search returns an error, callers cannot know whether a match
 /// exists or not.
-pub fn try_search(
+pub fn try_search<C: Cursor>(
     regex: &Regex,
     cache: &mut Cache,
-    input: &mut Input<'_>,
+    input: &mut Input<C>,
 ) -> Result<Option<Match>, MatchError> {
     let (fcache, rcache) = cache.as_parts_mut();
-    let end = match dfa::try_search_fwd(regex.forward(), fcache, input)? {
+    let end = match try_search_fwd(regex.forward(), fcache, input)? {
         None => return Ok(None),
         Some(end) => end,
     };
@@ -192,10 +194,13 @@ pub fn try_search(
     // much as we can. We also need to be careful to make the search
     // anchored. We don't want the reverse search to report any matches
     // other than the one beginning at the end of our forward search.
-    let mut revsearch =
-        input.clone().span(input.start()..end.offset()).anchored(Anchored::Yes).earliest(false);
-    let start = dfa::try_search_rev(regex.reverse(), rcache, &mut revsearch)?
-        .expect("reverse search must match if forward search does");
+
+    let match_range = input.start()..end.offset();
+    let start = input.with(|mut revsearch| {
+        revsearch = revsearch.span(match_range).anchored(Anchored::Yes).earliest(false);
+        search::try_search_rev(regex.reverse(), rcache, revsearch)
+    });
+    let start = start?.expect("reverse search must match if forward search does");
     debug_assert_eq!(
         start.pattern(),
         end.pattern(),
@@ -220,13 +225,13 @@ pub fn try_search(
 ///
 /// This iterator can be created with the [`Regex::find_iter`] method.
 #[derive(Debug)]
-pub struct FindMatches<'r, 'c, 'h> {
+pub struct FindMatches<'r, 'c, C: Cursor> {
     re: &'r Regex,
     cache: &'c mut Cache,
-    it: iter::Searcher<'h>,
+    it: iter::Searcher<C>,
 }
 
-impl<'r, 'c, 'h> Iterator for FindMatches<'r, 'c, 'h> {
+impl<'r, 'c, C: Cursor> Iterator for FindMatches<'r, 'c, C> {
     type Item = Match;
 
     #[inline]

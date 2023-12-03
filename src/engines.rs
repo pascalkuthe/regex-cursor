@@ -1,3 +1,3 @@
 mod dfa;
 mod hybrid;
-mod pikevm;
+// mod pikevm;

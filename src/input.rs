@@ -15,16 +15,15 @@ use crate::util::utf8::is_boundary;
 
 const LOOK_BEHIND_SIZE: usize = 4;
 
-#[derive(Clone)]
 pub struct Input<C: Cursor> {
     // span: Span,
     anchored: Anchored,
     earliest: bool,
     /// Offset of the current chunk from the start of the stream
-    offset: usize,
+    chunk_offset: usize,
     /// Position within the current chunk
-    at: usize,
-    end: usize,
+    pub(crate) chunk_pos: usize,
+    span: Span,
     /// the last 4 bytes before the current chunk
     look_behind: [u8; LOOK_BEHIND_SIZE],
     cursor: C,
@@ -45,20 +44,15 @@ impl<C: Cursor> Input<C> {
         Input {
             anchored: Anchored::No,
             earliest: false,
-            offset,
-            at: 0,
+            chunk_offset: offset,
+            chunk_pos: 0,
             cursor: cursor.into_cursor(),
             // init with invalid utf8. We don't need to track
             // which of these have been filed since we only look
             // behind more than one byte in utf8 mode
             look_behind: [255; 4],
-            end: usize::MAX,
+            span: Span { start: offset, end: usize::MAX },
         }
-    }
-
-    #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub fn offset(&self) -> usize {
-        self.offset
     }
 
     /// Return a borrow of the current underlying chunk as a slice of bytes.
@@ -88,7 +82,7 @@ impl<C: Cursor> Input<C> {
     /// ```
     #[cfg_attr(feature = "perf-inline", inline(always))]
     pub fn chunk_offset(&self) -> usize {
-        self.offset
+        self.chunk_offset
     }
 
     /// Return the start position of this search.
@@ -135,12 +129,18 @@ impl<C: Cursor> Input<C> {
     /// ```
     #[inline]
     pub fn end(&self) -> usize {
-        self.end
+        self.span.end
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
     pub fn get_chunk_end(&self) -> usize {
-        let end = self.end - self.chunk_offset();
+        let end = self.span.end - self.chunk_offset();
+        end.min(self.chunk().len())
+    }
+
+    #[cfg_attr(feature = "perf-inline", inline(always))]
+    pub fn get_chunk_start(&self) -> usize {
+        let end = self.span.end - self.chunk_offset();
         end.min(self.chunk().len())
     }
 
@@ -162,7 +162,7 @@ impl<C: Cursor> Input<C> {
     /// ```
     #[inline]
     pub fn get_span(&self) -> Span {
-        Span { start: self.offset + self.at, end: self.end }
+        self.span
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
@@ -183,39 +183,41 @@ impl<C: Cursor> Input<C> {
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub fn advance(&mut self) -> bool {
+    pub(crate) fn advance(&mut self) -> bool {
         let old_len = self.cursor.chunk().len();
         let advanced = self.cursor.advance();
         if advanced {
-            self.offset += old_len
+            self.chunk_offset += old_len;
+            self.chunk_pos = 0;
+        } else {
+            self.span.end = self.chunk_offset + old_len;
         }
-        self.at = 0;
         advanced
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub fn advance_with_look_behind(&mut self) -> bool {
+    pub(crate) fn advance_with_look_behind(&mut self) -> bool {
         self.set_look_behind();
         self.advance()
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub fn backtrack(&mut self) -> bool {
+    pub(crate) fn backtrack(&mut self) -> bool {
         let backtracked = self.cursor.backtrack();
         if backtracked {
-            self.offset -= self.chunk().len();
-            self.at = self.chunk().len() - 1;
-        } else if self.offset != 0 {
-            unreachable!("cursor does not support backtracking")
+            self.chunk_offset -= self.chunk().len();
+            self.chunk_pos = self.chunk().len();
+        } else if self.chunk_offset != 0 {
+            unreachable!("cursor does not support backtracking {}", self.chunk_offset)
         } else {
-            self.at = 0
+            self.chunk_pos = 0
         }
         backtracked
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub fn ensure_look_behind(&mut self) -> Option<&[u8]> {
-        if self.offset == 0 {
+    pub(crate) fn ensure_look_behind(&mut self) -> Option<&[u8]> {
+        if self.chunk_offset == 0 {
             return None;
         }
         // move back to the last chunk to read the look behind
@@ -225,21 +227,21 @@ impl<C: Cursor> Input<C> {
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub fn look_behind(&mut self) -> Option<&[u8]> {
-        if self.offset == 0 {
+    pub(crate) fn look_behind(&mut self) -> Option<&[u8]> {
+        if self.chunk_offset == 0 {
             return None;
         }
         Some(&self.look_behind)
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub fn get_chunk_pos(&self) -> usize {
-        self.at
+    pub(crate) fn chunk_pos(&self) -> usize {
+        self.chunk_pos
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub fn set_chunk_pos(&mut self, at: usize) {
-        self.at = at;
+    pub(crate) fn set_chunk_pos(&mut self, at: usize) {
+        self.chunk_pos = at;
     }
 
     /// Sets the anchor mode of a search.
@@ -335,7 +337,7 @@ impl<C: Cursor> Input<C> {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     #[inline]
-    pub fn anchored(mut self, mode: Anchored) -> Self {
+    pub fn anchored(&mut self, mode: Anchored) -> &mut Self {
         self.set_anchored(mode);
         self
     }
@@ -387,7 +389,7 @@ impl<C: Cursor> Input<C> {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     #[inline]
-    pub fn earliest(mut self, yes: bool) -> Self {
+    pub fn earliest(&mut self, yes: bool) -> &mut Self {
         self.set_earliest(yes);
         self
     }
@@ -514,7 +516,7 @@ impl<C: Cursor> Input<C> {
     /// reported a match at position `0`, even though `at` starts at offset
     /// `1` because we sliced the haystack.
     #[inline]
-    pub fn span<S: Into<Span>>(mut self, span: S) -> Input<C> {
+    pub fn span<S: Into<Span>>(&mut self, span: S) -> &mut Input<C> {
         self.set_span(span);
         self
     }
@@ -615,29 +617,64 @@ impl<C: Cursor> Input<C> {
     #[inline]
     pub fn set_span<S: Into<Span>>(&mut self, span: S) {
         let span = span.into();
-        assert!(span.start <= span.end, "invalid span {:?}", span,);
-        while span.start < self.offset {
+        assert!(span.start <= span.end.saturating_add(1), "invalid span {:?}", span,);
+        if self.at() < span.start {
+            self.move_to(span.start);
+        } else if !self.is_done() && self.at() > span.end {
+            self.move_to(span.end);
+        }
+        self.span = span;
+    }
+
+    #[inline]
+    pub(crate) fn move_to(&mut self, at: usize) {
+        // TODO: fastpath for O(log N) chunk jumping
+        while at < self.chunk_offset {
             self.backtrack();
         }
-        if span.start != self.offset {
-            while span.start >= self.offset + self.chunk().len() {
+        if at != self.chunk_offset {
+            while at >= self.chunk_offset + self.chunk().len() {
                 let advanced = self.advance();
                 if !advanced {
-                    // allow one past the end indexing
-                    if span.start == self.offset + self.chunk().len() {
-                        break;
-                    }
-                    panic!(
-                        "span start {} must not be larger than haystack length {}",
-                        span.start,
-                        self.offset + self.chunk().len()
-                    );
+                    let chunk_pos = (at - self.chunk_offset).min(self.chunk().len());
+                    self.set_chunk_pos(chunk_pos);
+                    return;
                 }
             }
         }
-        self.at = span.start - self.offset;
-        self.end = span.end;
+        self.set_chunk_pos(at - self.chunk_offset());
     }
+
+    #[cfg_attr(feature = "perf-inline", inline(always))]
+    pub(crate) fn at(&self) -> usize {
+        self.chunk_offset() + self.chunk_pos()
+    }
+
+    #[cfg_attr(feature = "perf-inline", inline(always))]
+    pub(crate) fn with<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        let anchored = self.anchored;
+        let earliest = self.earliest;
+        let span = self.span;
+        let res = f(self);
+        self.set_span(span);
+        self.set_earliest(earliest);
+        self.set_anchored(anchored);
+        res
+    }
+
+    // #[cfg_attr(feature = "perf-inline", inline(always))]
+    // pub(crate) fn try_clone(&self) -> Option<Input<C>> {
+    //     let res = Input {
+    //         cursor: self.cursor.try_clone()?,
+    //         anchored: self.anchored,
+    //         earliest: self.earliest,
+    //         offset: self.offset,
+    //         chunk_pos: self.chunk_pos,
+    //         span: self.span,
+    //         look_behind: self.look_behind,
+    //     };
+    //     Some(res)
+    // }
 
     /// Set the span for this search configuration given any range.
     ///
@@ -747,7 +784,7 @@ impl<C: Cursor> Input<C> {
     /// ```
     #[inline]
     pub fn is_done(&self) -> bool {
-        self.chunk().is_empty()
+        self.get_span().start > self.get_span().end
     }
 
     /// Returns true if and only if the given offset in this search's chunk
@@ -773,7 +810,7 @@ impl<C: Cursor> Input<C> {
     /// ```
     #[inline]
     pub fn is_char_boundary(&mut self) -> bool {
-        is_boundary(&self.chunk(), self.at)
+        is_boundary(self.chunk(), self.chunk_pos)
     }
 }
 
@@ -785,6 +822,9 @@ impl<C: Cursor> core::fmt::Debug for Input<C> {
             .field("chunk", &DebugHaystack(self.chunk()))
             .field("anchored", &self.anchored)
             .field("earliest", &self.earliest)
+            .field("chunk_pos", &self.chunk_pos)
+            .field("chunk_offset", &self.chunk_offset)
+            .field("span", &self.span)
             .finish()
     }
 }

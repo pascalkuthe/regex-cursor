@@ -11,6 +11,24 @@ impl<C: Cursor> IntoCursor for C {
     }
 }
 
+impl<C: Cursor> Cursor for &mut C {
+    fn chunk(&self) -> &[u8] {
+        C::chunk(self)
+    }
+
+    fn utf8_aware(&self) -> bool {
+        C::utf8_aware(self)
+    }
+
+    fn advance(&mut self) -> bool {
+        C::advance(self)
+    }
+
+    fn backtrack(&mut self) -> bool {
+        C::backtrack(self)
+    }
+}
+
 impl<'h> IntoCursor for ropey::iter::Chunks<'h> {
     type Cursor = RopeyCursor<'h>;
 
@@ -127,14 +145,22 @@ impl<'a, I: Iterator<Item = &'a str>> Cursor for Utf8Bytes<'a, I> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Pos {
+    ChunkStart,
+    ChunkEnd,
+}
+
+#[derive(Clone)]
 pub struct RopeyCursor<'a> {
     iter: ropey::iter::Chunks<'a>,
     current: &'a [u8],
+    pos: Pos,
 }
 
 impl<'a> RopeyCursor<'a> {
     pub fn new(mut iter: ropey::iter::Chunks<'a>) -> Self {
-        Self { current: iter.next().unwrap_or_default().as_bytes(), iter }
+        Self { current: iter.next().unwrap_or_default().as_bytes(), iter, pos: Pos::ChunkEnd }
     }
 }
 
@@ -144,6 +170,13 @@ impl Cursor for RopeyCursor<'_> {
     }
 
     fn advance(&mut self) -> bool {
+        match self.pos {
+            Pos::ChunkStart => {
+                self.iter.next();
+                self.pos = Pos::ChunkEnd;
+            }
+            Pos::ChunkEnd => (),
+        }
         for next in self.iter.by_ref() {
             if next.is_empty() {
                 continue;
@@ -155,6 +188,13 @@ impl Cursor for RopeyCursor<'_> {
     }
 
     fn backtrack(&mut self) -> bool {
+        match self.pos {
+            Pos::ChunkStart => {}
+            Pos::ChunkEnd => {
+                self.iter.prev();
+                self.pos = Pos::ChunkStart;
+            }
+        }
         while let Some(prev) = self.iter.prev() {
             if prev.is_empty() {
                 continue;
@@ -162,8 +202,6 @@ impl Cursor for RopeyCursor<'_> {
             self.current = prev.as_bytes();
             return true;
         }
-
-        self.current = &[];
         false
     }
 

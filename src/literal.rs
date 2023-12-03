@@ -20,7 +20,7 @@ fn find_1<C: Cursor>(prefilter: &Prefilter, input: &mut Input<C>) -> Option<Span
     debug_assert_eq!(prefilter.max_needle_len(), 1);
     let first_haystack = &input.chunk();
     if let Some(mut res) = prefilter
-        .find(first_haystack, Span { start: input.get_chunk_pos(), end: input.get_chunk_end() })
+        .find(first_haystack, Span { start: input.chunk_pos(), end: input.get_chunk_end() })
     {
         res.start += input.chunk_offset();
         res.end += input.chunk_offset();
@@ -44,8 +44,8 @@ fn find_n<C: Cursor>(prefilter: &Prefilter, input: &mut Input<C>) -> Option<Span
     let carry_over = prefilter.max_needle_len() - 1;
     let sliding_window = 2 * carry_over;
     let mut buf = Vec::with_capacity(3 * carry_over);
-    if let Some(mut res) = prefilter
-        .find(input.chunk(), Span { start: input.get_chunk_pos(), end: input.get_chunk_end() })
+    if let Some(mut res) =
+        prefilter.find(input.chunk(), Span { start: input.chunk_pos(), end: input.get_chunk_end() })
     {
         res.start += input.chunk_offset();
         res.end += input.chunk_offset();
@@ -55,7 +55,8 @@ fn find_n<C: Cursor>(prefilter: &Prefilter, input: &mut Input<C>) -> Option<Span
     let mut found_large_chunk = false;
 
     while input.chunk_offset() + input.chunk().len() < input.end() {
-        debug_assert!(
+        #[cfg(debug_assertions)]
+        assert!(
             buf.is_empty()
                 || (buf.len() < sliding_window && (buf.len() >= carry_over || !found_large_chunk)),
             "{} {} {}",

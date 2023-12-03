@@ -1,3 +1,4 @@
+use crate::cursor::Cursor;
 use crate::Input;
 
 /// Search for between 1 and 3 needle bytes in the given haystack, starting the
@@ -19,12 +20,16 @@ pub(crate) fn find_fwd_imp(needles: &[u8], haystack: &[u8], at: usize) -> Option
 /// search at the given position. If `needles` has a length other than 1-3,
 /// then this panics.
 #[cfg_attr(feature = "perf-inline", inline(always))]
-pub(crate) fn find_fwd(needles: &[u8], input: &mut Input, at: usize) -> Option<usize> {
-    if let Some(pos) = find_fwd_imp(needles, input.haystack(), at) {
+pub(crate) fn find_fwd<C: Cursor>(
+    needles: &[u8],
+    input: &mut Input<C>,
+    at: usize,
+) -> Option<usize> {
+    if let Some(pos) = find_fwd_imp(needles, input.chunk(), at) {
         return Some(pos);
     }
-    while input.advance_fwd().is_some() {
-        if let Some(pos) = find_fwd_imp(needles, input.haystack(), 0) {
+    while input.advance() {
+        if let Some(pos) = find_fwd_imp(needles, input.chunk(), 0) {
             return Some(pos);
         }
     }
@@ -49,12 +54,16 @@ pub(crate) fn find_rev_imp(needles: &[u8], haystack: &[u8], at: usize) -> Option
 /// search at the given position. If `needles` has a length other than 1-3,
 /// then this panics.
 #[cfg_attr(feature = "perf-inline", inline(always))]
-pub(crate) fn find_rev(needles: &[u8], input: &mut Input, at: usize) -> Option<usize> {
-    if let Some(pos) = find_rev_imp(needles, input.haystack(), at) {
+pub(crate) fn find_rev<C: Cursor>(
+    needles: &[u8],
+    input: &mut Input<C>,
+    at: usize,
+) -> Option<usize> {
+    if let Some(pos) = find_rev_imp(needles, input.chunk(), at) {
         return Some(pos);
     }
-    while input.advance_rev().is_some() {
-        if let Some(pos) = find_rev_imp(needles, input.haystack(), input.haystack().len()) {
+    while input.backtrack() {
+        if let Some(pos) = find_rev_imp(needles, input.chunk(), input.chunk().len()) {
             return Some(pos);
         }
     }

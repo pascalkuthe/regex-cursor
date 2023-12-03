@@ -10,8 +10,11 @@ Currently, this module supports iteration over any regex engine that works
 with the [`HalfMatch`], [`Match`] or [`Captures`] types.
 */
 
+use std::fmt::Debug;
+
 use regex_automata::{HalfMatch, Match, MatchError};
 
+use crate::cursor::Cursor;
 use crate::input::Input;
 
 /// A searcher for creating iterators and performing lower level iteration.
@@ -143,26 +146,25 @@ use crate::input::Input;
 ///
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
-#[derive(Clone, Debug)]
-pub struct Searcher<'h> {
+pub struct Searcher<C: Cursor> {
     /// The input parameters to give to each regex engine call.
     ///
     /// The start position of the search is mutated during iteration.
-    input: Input<'h>,
+    input: Input<C>,
     /// Records the end offset of the most recent match. This is necessary to
     /// handle a corner case for preventing empty matches from overlapping with
     /// the ending bounds of a prior match.
     last_match_end: Option<usize>,
 }
 
-impl<'h> Searcher<'h> {
+impl<C: Cursor> Searcher<C> {
     /// Create a new fallible non-overlapping matches iterator.
     ///
     /// The given `input` provides the parameters (including the haystack),
     /// while the `finder` represents a closure that calls the underlying regex
     /// engine. The closure may borrow any additional state that is needed,
     /// such as a prefilter scanner.
-    pub fn new(input: Input<'h>) -> Searcher<'h> {
+    pub fn new(input: Input<C>) -> Searcher<C> {
         Searcher { input, last_match_end: None }
     }
 
@@ -171,8 +173,8 @@ impl<'h> Searcher<'h> {
     /// The `Input` returned is generally equivalent to the one given to
     /// [`Searcher::new`], but its start position may be different to reflect
     /// the start of the next search to be executed.
-    pub fn input<'s>(&'s self) -> &'s Input<'h> {
-        &self.input
+    pub fn input(&mut self) -> &mut Input<C> {
+        &mut self.input
     }
 
     /// Return the next half match for an infallible search if one exists, and
@@ -260,7 +262,7 @@ impl<'h> Searcher<'h> {
     #[inline]
     pub fn advance_half<F>(&mut self, finder: F) -> Option<HalfMatch>
     where
-        F: FnMut(&mut Input<'_>) -> Result<Option<HalfMatch>, MatchError>,
+        F: FnMut(&mut Input<C>) -> Result<Option<HalfMatch>, MatchError>,
     {
         match self.try_advance_half(finder) {
             Ok(m) => m,
@@ -375,7 +377,7 @@ impl<'h> Searcher<'h> {
     #[inline]
     pub fn advance<F>(&mut self, finder: F) -> Option<Match>
     where
-        F: FnMut(&mut Input<'_>) -> Result<Option<Match>, MatchError>,
+        F: FnMut(&mut Input<C>) -> Result<Option<Match>, MatchError>,
     {
         match self.try_advance(finder) {
             Ok(m) => m,
@@ -395,7 +397,7 @@ impl<'h> Searcher<'h> {
     #[inline]
     pub fn try_advance_half<F>(&mut self, mut finder: F) -> Result<Option<HalfMatch>, MatchError>
     where
-        F: FnMut(&mut Input<'_>) -> Result<Option<HalfMatch>, MatchError>,
+        F: FnMut(&mut Input<C>) -> Result<Option<HalfMatch>, MatchError>,
     {
         let mut m = match finder(&mut self.input)? {
             None => return Ok(None),
@@ -420,7 +422,7 @@ impl<'h> Searcher<'h> {
     #[inline]
     pub fn try_advance<F>(&mut self, mut finder: F) -> Result<Option<Match>, MatchError>
     where
-        F: FnMut(&mut Input<'_>) -> Result<Option<Match>, MatchError>,
+        F: FnMut(&mut Input<C>) -> Result<Option<Match>, MatchError>,
     {
         let mut m = match finder(&mut self.input)? {
             None => return Ok(None),
@@ -479,127 +481,11 @@ impl<'h> Searcher<'h> {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     #[inline]
-    pub fn into_half_matches_iter<F>(self, finder: F) -> TryHalfMatchesIter<'h, F>
+    pub fn into_half_matches_iter<F>(self, finder: F) -> TryHalfMatchesIter<C, F>
     where
-        F: FnMut(&mut Input<'_>) -> Result<Option<HalfMatch>, MatchError>,
+        F: FnMut(&mut Input<C>) -> Result<Option<HalfMatch>, MatchError>,
     {
         TryHalfMatchesIter { it: self, finder }
-    }
-
-    /// Given a closure that executes a single search, return an iterator over
-    /// all successive non-overlapping matches.
-    ///
-    /// The iterator returned yields result values. If the underlying regex
-    /// engine is configured to never return an error, consider calling
-    /// [`TryMatchesIter::infallible`] to convert errors into panics.
-    ///
-    /// # Example
-    ///
-    /// This example shows how to use a `Searcher` to create a proper
-    /// iterator over matches.
-    ///
-    /// ```
-    /// use regex_automata::{
-    ///     hybrid::regex::Regex,
-    ///     util::iter::Searcher,
-    ///     Match, Input,
-    /// };
-    ///
-    /// let re = Regex::new(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")?;
-    /// let mut cache = re.create_cache();
-    ///
-    /// let input = Input::new("2010-03-14 2016-10-08 2020-10-22");
-    /// let mut it = Searcher::new(input).into_matches_iter(|input| {
-    ///     re.try_search(&mut cache, input)
-    /// });
-    ///
-    /// let expected = Some(Ok(Match::must(0, 0..10)));
-    /// assert_eq!(expected, it.next());
-    ///
-    /// let expected = Some(Ok(Match::must(0, 11..21)));
-    /// assert_eq!(expected, it.next());
-    ///
-    /// let expected = Some(Ok(Match::must(0, 22..32)));
-    /// assert_eq!(expected, it.next());
-    ///
-    /// let expected = None;
-    /// assert_eq!(expected, it.next());
-    ///
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
-    #[inline]
-    pub fn into_matches_iter<F>(self, finder: F) -> TryMatchesIter<'h, F>
-    where
-        F: FnMut(&mut Input<'_>) -> Result<Option<Match>, MatchError>,
-    {
-        TryMatchesIter { it: self, finder }
-    }
-
-    /// Given a closure that executes a single search, return an iterator over
-    /// all successive non-overlapping `Captures` values.
-    ///
-    /// The iterator returned yields result values. If the underlying regex
-    /// engine is configured to never return an error, consider calling
-    /// [`TryCapturesIter::infallible`] to convert errors into panics.
-    ///
-    /// Unlike the other iterator constructors, this accepts an initial
-    /// `Captures` value. This `Captures` value is reused for each search, and
-    /// the iterator implementation clones it before returning it. The caller
-    /// must provide this value because the iterator is purposely ignorant
-    /// of the underlying regex engine and thus doesn't know how to create
-    /// one itself. More to the point, a `Captures` value itself has a few
-    /// different constructors, which change which kind of information is
-    /// available to query in exchange for search performance.
-    ///
-    /// # Example
-    ///
-    /// This example shows how to use a `Searcher` to create a proper iterator
-    /// over `Captures` values, which provides access to all capturing group
-    /// spans for each match.
-    ///
-    /// ```
-    /// use regex_automata::{
-    ///     nfa::thompson::pikevm::PikeVM,
-    ///     util::iter::Searcher,
-    ///     Input,
-    /// };
-    ///
-    /// let re = PikeVM::new(
-    ///     r"(?P<y>[0-9]{4})-(?P<m>[0-9]{2})-(?P<d>[0-9]{2})",
-    /// )?;
-    /// let (mut cache, caps) = (re.create_cache(), re.create_captures());
-    ///
-    /// let haystack = "2010-03-14 2016-10-08 2020-10-22";
-    /// let input = Input::new(haystack);
-    /// let mut it = Searcher::new(input)
-    ///     .into_captures_iter(caps, |input, caps| {
-    ///         re.search(&mut cache, input, caps);
-    ///         Ok(())
-    ///     });
-    ///
-    /// let got = it.next().expect("first date")?;
-    /// let year = got.get_group_by_name("y").expect("must match");
-    /// assert_eq!("2010", &haystack[year]);
-    ///
-    /// let got = it.next().expect("second date")?;
-    /// let month = got.get_group_by_name("m").expect("must match");
-    /// assert_eq!("10", &haystack[month]);
-    ///
-    /// let got = it.next().expect("third date")?;
-    /// let day = got.get_group_by_name("d").expect("must match");
-    /// assert_eq!("22", &haystack[day]);
-    ///
-    /// assert!(it.next().is_none());
-    ///
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
-    #[cfg(feature = "alloc")]
-    #[inline]
-    pub fn into_captures_iter<F>(self, caps: Captures, finder: F) -> TryCapturesIter<'h, F>
-    where
-        F: FnMut(&mut Input<'_>, &mut Captures) -> Result<(), MatchError>,
-    {
-        TryCapturesIter { it: self, caps, finder }
     }
 
     /// Handles the special case of a match that begins where the previous
@@ -615,7 +501,7 @@ impl<'h> Searcher<'h> {
         mut finder: F,
     ) -> Result<Option<HalfMatch>, MatchError>
     where
-        F: FnMut(&mut Input<'_>) -> Result<Option<HalfMatch>, MatchError>,
+        F: FnMut(&mut Input<C>) -> Result<Option<HalfMatch>, MatchError>,
     {
         // Since we are only here when 'm.offset()' matches the offset of the
         // last match, it follows that this must have been an empty match.
@@ -659,11 +545,20 @@ impl<'h> Searcher<'h> {
         mut finder: F,
     ) -> Result<Option<Match>, MatchError>
     where
-        F: FnMut(&mut Input<'_>) -> Result<Option<Match>, MatchError>,
+        F: FnMut(&mut Input<C>) -> Result<Option<Match>, MatchError>,
     {
         assert!(m.is_empty());
         self.input.set_start(self.input.start().checked_add(1).unwrap());
         finder(&mut self.input)
+    }
+}
+
+impl<C: Cursor> Debug for Searcher<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Searcher")
+            .field("input", &self.input)
+            .field("last_match_end", &self.last_match_end)
+            .finish()
     }
 }
 
@@ -685,18 +580,18 @@ impl<'h> Searcher<'h> {
 /// unwieldy to use.
 ///
 /// This iterator is created by [`Searcher::into_half_matches_iter`].
-pub struct TryHalfMatchesIter<'h, F> {
-    it: Searcher<'h>,
+pub struct TryHalfMatchesIter<C: Cursor, F> {
+    it: Searcher<C>,
     finder: F,
 }
 
-impl<'h, F> TryHalfMatchesIter<'h, F> {
+impl<'i, C: Cursor, F> TryHalfMatchesIter<C, F> {
     /// Return an infallible version of this iterator.
     ///
     /// Any item yielded that corresponds to an error results in a panic. This
     /// is useful if your underlying regex engine is configured in a way that
     /// it is guaranteed to never return an error.
-    pub fn infallible(self) -> HalfMatchesIter<'h, F> {
+    pub fn infallible(self) -> HalfMatchesIter<C, F> {
         HalfMatchesIter(self)
     }
 
@@ -705,14 +600,14 @@ impl<'h, F> TryHalfMatchesIter<'h, F> {
     /// The `Input` returned is generally equivalent to the one used to
     /// construct this iterator, but its start position may be different to
     /// reflect the start of the next search to be executed.
-    pub fn input<'i>(&'i self) -> &'i Input<'h> {
+    pub fn input(&mut self) -> &mut Input<C> {
         self.it.input()
     }
 }
 
-impl<'h, F> Iterator for TryHalfMatchesIter<'h, F>
+impl<'i, C: Cursor, F> Iterator for TryHalfMatchesIter<C, F>
 where
-    F: FnMut(&mut Input<'_>) -> Result<Option<HalfMatch>, MatchError>,
+    F: FnMut(&mut Input<C>) -> Result<Option<HalfMatch>, MatchError>,
 {
     type Item = Result<HalfMatch, MatchError>;
 
@@ -722,7 +617,7 @@ where
     }
 }
 
-impl<'h, F> core::fmt::Debug for TryHalfMatchesIter<'h, F> {
+impl<'i, C: Cursor, F> core::fmt::Debug for TryHalfMatchesIter<C, F> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("TryHalfMatchesIter")
             .field("it", &self.it)
@@ -751,22 +646,22 @@ impl<'h, F> core::fmt::Debug for TryHalfMatchesIter<'h, F> {
 /// This iterator is created by [`Searcher::into_half_matches_iter`] and
 /// then calling [`TryHalfMatchesIter::infallible`].
 #[derive(Debug)]
-pub struct HalfMatchesIter<'h, F>(TryHalfMatchesIter<'h, F>);
+pub struct HalfMatchesIter<C: Cursor, F>(TryHalfMatchesIter<C, F>);
 
-impl<'h, F> HalfMatchesIter<'h, F> {
+impl<'i, C: Cursor, F> HalfMatchesIter<C, F> {
     /// Returns the current `Input` used by this iterator.
     ///
     /// The `Input` returned is generally equivalent to the one used to
     /// construct this iterator, but its start position may be different to
     /// reflect the start of the next search to be executed.
-    pub fn input<'i>(&'i self) -> &'i Input<'h> {
+    pub fn input(&mut self) -> &mut Input<C> {
         self.0.it.input()
     }
 }
 
-impl<'h, F> Iterator for HalfMatchesIter<'h, F>
+impl<'i, C: Cursor, F> Iterator for HalfMatchesIter<C, F>
 where
-    F: FnMut(&mut Input<'_>) -> Result<Option<HalfMatch>, MatchError>,
+    F: FnMut(&mut Input<C>) -> Result<Option<HalfMatch>, MatchError>,
 {
     type Item = HalfMatch;
 
@@ -783,231 +678,37 @@ where
     }
 }
 
-/// An iterator over all non-overlapping matches for a fallible search.
-///
-/// The iterator yields a `Result<Match, MatchError>` value until no more
-/// matches could be found.
-///
-/// The type parameters are as follows:
-///
-/// * `F` represents the type of a closure that executes the search.
-///
-/// The lifetime parameters come from the [`Input`] type:
-///
-/// * `'h` is the lifetime of the underlying haystack.
-///
-/// When possible, prefer the iterators defined on the regex engine you're
-/// using. This tries to abstract over the regex engine and is thus a bit more
-/// unwieldy to use.
-///
-/// This iterator is created by [`Searcher::into_matches_iter`].
-pub struct TryMatchesIter<'h, F> {
-    it: Searcher<'h>,
-    finder: F,
-}
-
-impl<'h, F> TryMatchesIter<'h, F> {
-    /// Return an infallible version of this iterator.
-    ///
-    /// Any item yielded that corresponds to an error results in a panic. This
-    /// is useful if your underlying regex engine is configured in a way that
-    /// it is guaranteed to never return an error.
-    pub fn infallible(self) -> MatchesIter<'h, F> {
-        MatchesIter(self)
-    }
-
-    /// Returns the current `Input` used by this iterator.
-    ///
-    /// The `Input` returned is generally equivalent to the one used to
-    /// construct this iterator, but its start position may be different to
-    /// reflect the start of the next search to be executed.
-    pub fn input<'i>(&'i self) -> &'i Input<'h> {
-        self.it.input()
-    }
-}
-
-impl<'h, F> Iterator for TryMatchesIter<'h, F>
-where
-    F: FnMut(&mut Input<'_>) -> Result<Option<Match>, MatchError>,
-{
-    type Item = Result<Match, MatchError>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Result<Match, MatchError>> {
-        self.it.try_advance(&mut self.finder).transpose()
-    }
-}
-
-impl<'h, F> core::fmt::Debug for TryMatchesIter<'h, F> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("TryMatchesIter")
-            .field("it", &self.it)
-            .field("finder", &"<closure>")
-            .finish()
-    }
-}
-
-/// An iterator over all non-overlapping matches for an infallible search.
-///
-/// The iterator yields a [`Match`] value until no more matches could be found.
-///
-/// The type parameters are as follows:
-///
-/// * `F` represents the type of a closure that executes the search.
-///
-/// The lifetime parameters come from the [`Input`] type:
-///
-/// * `'h` is the lifetime of the underlying haystack.
-///
-/// When possible, prefer the iterators defined on the regex engine you're
-/// using. This tries to abstract over the regex engine and is thus a bit more
-/// unwieldy to use.
-///
-/// This iterator is created by [`Searcher::into_matches_iter`] and
-/// then calling [`TryMatchesIter::infallible`].
-#[derive(Debug)]
-pub struct MatchesIter<'h, F>(TryMatchesIter<'h, F>);
-
-impl<'h, F> MatchesIter<'h, F> {
-    /// Returns the current `Input` used by this iterator.
-    ///
-    /// The `Input` returned is generally equivalent to the one used to
-    /// construct this iterator, but its start position may be different to
-    /// reflect the start of the next search to be executed.
-    pub fn input<'i>(&'i self) -> &'i Input<'h> {
-        self.0.it.input()
-    }
-}
-
-impl<'h, F> Iterator for MatchesIter<'h, F>
-where
-    F: FnMut(&mut Input<'_>) -> Result<Option<Match>, MatchError>,
-{
-    type Item = Match;
-
-    #[inline]
-    fn next(&mut self) -> Option<Match> {
-        match self.0.next()? {
-            Ok(m) => Some(m),
-            Err(err) => panic!(
-                "unexpected regex find error: {}\n\
-                 to handle find errors, use 'try' or 'search' methods",
-                err,
-            ),
+#[cfg(test)]
+pub fn assert_eq<T: PartialEq + Debug>(
+    mut iter1: impl Iterator<Item = T>,
+    mut iter2: impl Iterator<Item = T>,
+) {
+    let mut i = 0;
+    loop {
+        match (iter1.next(), iter2.next()) {
+            (None, None) => break,
+            (iter1, iter2) => assert_eq!(iter1, iter2, "{i}"),
         }
+        i += 1;
     }
 }
 
-/// An iterator over all non-overlapping captures for a fallible search.
-///
-/// The iterator yields a `Result<Captures, MatchError>` value until no more
-/// matches could be found.
-///
-/// The type parameters are as follows:
-///
-/// * `F` represents the type of a closure that executes the search.
-///
-/// The lifetime parameters come from the [`Input`] type:
-///
-/// * `'h` is the lifetime of the underlying haystack.
-///
-/// When possible, prefer the iterators defined on the regex engine you're
-/// using. This tries to abstract over the regex engine and is thus a bit more
-/// unwieldy to use.
-///
-/// This iterator is created by [`Searcher::into_captures_iter`].
-#[cfg(feature = "alloc")]
-pub struct TryCapturesIter<'h, F> {
-    it: Searcher<'h>,
-    caps: Captures,
-    finder: F,
-}
-
-#[cfg(feature = "alloc")]
-impl<'h, F> TryCapturesIter<'h, F> {
-    /// Return an infallible version of this iterator.
-    ///
-    /// Any item yielded that corresponds to an error results in a panic. This
-    /// is useful if your underlying regex engine is configured in a way that
-    /// it is guaranteed to never return an error.
-    pub fn infallible(self) -> CapturesIter<'h, F> {
-        CapturesIter(self)
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<'h, F> Iterator for TryCapturesIter<'h, F>
-where
-    F: FnMut(&mut Input<'_>, &mut Captures) -> Result<(), MatchError>,
-{
-    type Item = Result<Captures, MatchError>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Result<Captures, MatchError>> {
-        let TryCapturesIter { ref mut it, ref mut caps, ref mut finder } = *self;
-        let result = it
-            .try_advance(|input| {
-                (finder)(input, caps)?;
-                Ok(caps.get_match())
-            })
-            .transpose()?;
-        match result {
-            Ok(_) => Some(Ok(caps.clone())),
-            Err(err) => Some(Err(err)),
+#[cfg(test)]
+pub fn prop_assert_eq<T: PartialEq + Debug>(
+    mut iter1: impl Iterator<Item = T>,
+    mut iter2: impl Iterator<Item = T>,
+) -> proptest::test_runner::TestCaseResult {
+    let mut i = 0;
+    let mut prev = None;
+    loop {
+        match (iter1.next(), iter2.next()) {
+            (None, None) => break,
+            (iter1, iter2) => {
+                proptest::prop_assert_eq!(&iter1, &iter2, "i={}, prev={:?}", i, prev);
+                prev = iter1;
+            }
         }
+        i += 1;
     }
-}
-
-#[cfg(feature = "alloc")]
-impl<'h, F> core::fmt::Debug for TryCapturesIter<'h, F> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("TryCapturesIter")
-            .field("it", &self.it)
-            .field("caps", &self.caps)
-            .field("finder", &"<closure>")
-            .finish()
-    }
-}
-
-/// An iterator over all non-overlapping captures for an infallible search.
-///
-/// The iterator yields a [`Captures`] value until no more matches could be
-/// found.
-///
-/// The type parameters are as follows:
-///
-/// * `F` represents the type of a closure that executes the search.
-///
-/// The lifetime parameters come from the [`Input`] type:
-///
-/// * `'h` is the lifetime of the underlying haystack.
-///
-/// When possible, prefer the iterators defined on the regex engine you're
-/// using. This tries to abstract over the regex engine and is thus a bit more
-/// unwieldy to use.
-///
-/// This iterator is created by [`Searcher::into_captures_iter`] and then
-/// calling [`TryCapturesIter::infallible`].
-#[cfg(feature = "alloc")]
-#[derive(Debug)]
-pub struct CapturesIter<'h, F>(TryCapturesIter<'h, F>);
-
-#[cfg(feature = "alloc")]
-impl<'h, F> Iterator for CapturesIter<'h, F>
-where
-    F: FnMut(&mut Input<'_>, &mut Captures) -> Result<(), MatchError>,
-{
-    type Item = Captures;
-
-    #[inline]
-    fn next(&mut self) -> Option<Captures> {
-        match self.0.next()? {
-            Ok(m) => Some(m),
-            Err(err) => panic!(
-                "unexpected regex captures error: {}\n\
-                 to handle find errors, use 'try' or 'search' methods",
-                err,
-            ),
-        }
-    }
+    Ok(())
 }

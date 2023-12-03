@@ -156,46 +156,48 @@ crate handles that case just fine too.)
 
 use regex_automata::MatchError;
 
+use crate::cursor::Cursor;
 use crate::input::Input;
 
 #[cold]
 #[inline(never)]
-pub(crate) fn skip_splits_fwd<'h, T, F>(
-    input: &mut Input<'h>,
+pub(crate) fn skip_splits_fwd<T, F, C: Cursor>(
+    input: &mut Input<C>,
     init_value: T,
     match_offset: usize,
     find: F,
 ) -> Result<Option<T>, MatchError>
 where
-    F: FnMut(&mut Input<'h>) -> Result<Option<(T, usize)>, MatchError>,
+    F: FnMut(&mut Input<C>) -> Result<Option<(T, usize)>, MatchError>,
 {
-    skip_splits(true, input, init_value, match_offset, find)
+    skip_splits(true, input, match_offset, init_value, find)
 }
 
 #[cold]
 #[inline(never)]
-pub(crate) fn skip_splits_rev<'h, T, F>(
-    input: &mut Input<'h>,
+pub(crate) fn skip_splits_rev<T, F, C: Cursor>(
+    input: &mut Input<C>,
     init_value: T,
     match_offset: usize,
     find: F,
 ) -> Result<Option<T>, MatchError>
 where
-    F: FnMut(&mut Input<'h>) -> Result<Option<(T, usize)>, MatchError>,
+    F: FnMut(&mut Input<C>) -> Result<Option<(T, usize)>, MatchError>,
 {
-    skip_splits(false, input, init_value, match_offset, find)
+    skip_splits(false, input, match_offset, init_value, find)
 }
 
-fn skip_splits<'h, T, F>(
+fn skip_splits<T, F, C: Cursor>(
     forward: bool,
-    input: &mut Input<'h>,
+    input: &mut Input<C>,
+    match_offset: usize,
     init_value: T,
-    mut match_offset: usize,
     mut find: F,
 ) -> Result<Option<T>, MatchError>
 where
-    F: FnMut(&mut Input<'h>) -> Result<Option<(T, usize)>, MatchError>,
+    F: FnMut(&mut Input<C>) -> Result<Option<(T, usize)>, MatchError>,
 {
+    input.move_to(match_offset);
     // If our config says to do an anchored search, then we're definitely
     // done. We just need to determine whether we have a valid match or
     // not. If we don't, then we're not allowed to continue, so we report
@@ -231,13 +233,13 @@ where
     // out that case in every regex engine to save a tiny bit of work in an
     // extremely pathological case, so we just handle it here.
     if input.get_anchored().is_anchored() {
-        return Ok(if input.is_char_boundary(match_offset) { Some(init_value) } else { None });
+        return Ok(input.is_char_boundary().then_some(init_value));
     }
     // Otherwise, we have an unanchored search, so just keep looking for
     // matches until we have one that does not split a codepoint or we hit
     // EOI.
     let mut value = init_value;
-    while !input.is_char_boundary(match_offset) {
+    while !input.is_char_boundary() {
         if forward {
             // The unwrap is OK here because overflowing usize while
             // iterating over a slice is impossible, at it would require
@@ -254,7 +256,7 @@ where
             None => return Ok(None),
             Some((new_value, new_match_end)) => {
                 value = new_value;
-                match_offset = new_match_end;
+                input.move_to(new_match_end)
             }
         }
     }

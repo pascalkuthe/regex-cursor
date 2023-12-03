@@ -1,9 +1,12 @@
 use regex_automata::hybrid::dfa::{Cache, DFA};
-use regex_automata::hybrid::LazyStateID;
+use regex_automata::hybrid::{LazyStateID, StartError};
 use regex_automata::util::prefilter::Prefilter;
+use regex_automata::util::start;
 use regex_automata::{HalfMatch, MatchError};
 
+use crate::cursor::Cursor;
 use crate::input::Input;
+use crate::literal;
 use crate::util::empty::{skip_splits_fwd, skip_splits_rev};
 
 /// Executes a forward search and returns the end position of the leftmost
@@ -137,10 +140,10 @@ use crate::util::empty::{skip_splits_fwd, skip_splits_rev};
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[inline]
-pub fn try_search_fwd(
+pub fn try_search_fwd<C: Cursor>(
     dfa: &DFA,
     cache: &mut Cache,
-    input: &mut Input<'_>,
+    input: &mut Input<C>,
 ) -> Result<Option<HalfMatch>, MatchError> {
     let utf8empty = dfa.get_nfa().has_empty() && dfa.get_nfa().is_utf8();
     let hm = match find_fwd(dfa, cache, input)? {
@@ -338,10 +341,10 @@ pub fn try_search_fwd(
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[inline]
-pub fn try_search_rev(
+pub fn try_search_rev<C: Cursor>(
     dfa: &DFA,
     cache: &mut Cache,
-    input: &mut Input<'_>,
+    input: &mut Input<C>,
 ) -> Result<Option<HalfMatch>, MatchError> {
     let utf8empty = dfa.get_nfa().has_empty() && dfa.get_nfa().is_utf8();
     let hm = match find_rev(dfa, cache, input)? {
@@ -356,11 +359,12 @@ pub fn try_search_rev(
 }
 
 #[inline(never)]
-pub(crate) fn find_fwd(
+pub(crate) fn find_fwd<C: Cursor>(
     dfa: &DFA,
     cache: &mut Cache,
-    input: &mut Input<'_>,
+    input: &mut Input<C>,
 ) -> Result<Option<HalfMatch>, MatchError> {
+    input.move_to(input.start());
     if input.is_done() {
         return Ok(None);
     }
@@ -388,63 +392,60 @@ pub(crate) fn find_fwd(
 }
 
 #[cfg_attr(feature = "perf-inline", inline(always))]
-fn find_fwd_imp(
+fn find_fwd_imp<C: Cursor>(
     dfa: &DFA,
     cache: &mut Cache,
-    input: &mut Input<'_>,
+    input: &mut Input<C>,
     pre: Option<&'_ Prefilter>,
     earliest: bool,
 ) -> Result<Option<HalfMatch>, MatchError> {
     // See 'prefilter_restart' docs for explanation.
     let universal_start = dfa.get_nfa().look_set_prefix_any().is_empty();
     let mut mat = None;
-    let (mut chunk_at, mut sid) = init_fwd(dfa, cache, input)?;
+    let mut sid = init_fwd(dfa, cache, input)?;
+    if let Some(pre) = pre {
+        // If a prefilter doesn't report false positives, then we don't need to
+        // touch the DFA at all. However, since all matches include the pattern
+        // ID, and the prefilter infrastructure doesn't report pattern IDs, we
+        // limit this optimization to cases where there is exactly one pattern.
+        // In that case, any match must be the 0th pattern.
+        match literal::find(pre, input) {
+            None => return Ok(mat),
+            Some(ref span) => {
+                input.move_to(span.start);
+                if !universal_start {
+                    sid = prefilter_restart(dfa, cache, input)?;
+                }
+            }
+        }
+    }
     // This could just be a closure, but then I think it would be unsound
     // because it would need to be safe to invoke. This way, the lack of safety
     // is clearer in the code below.
     macro_rules! next_unchecked {
         ($sid:expr) => {{
-            debug_assert!(chunk_at < input.haystack().len());
-            let byte = *input.haystack().get_unchecked(chunk_at);
+            debug_assert!(input.chunk_pos() < input.chunk().len());
+            let byte = *input.chunk().get_unchecked(input.chunk_pos());
             dfa.next_state_untagged_unchecked(cache, $sid, byte)
         }};
     }
-    macro_rules! at {
-        () => {
-            input.haystack_off() + chunk_at
-        };
-    }
-    #[rustfmt::skip]
+
     macro_rules! ensure_chunk {
-        () => {
-            if chunk_at >= input.haystack().len() {
-                debug_assert_eq!(chunk_at, input.haystack().len());
-                chunk_at = 0;
-                input.advance_fwd();
+        () => {{
+            if input.chunk_pos() >= input.chunk().len() && !input.advance() {
+                break;
             }
-        };
+        }};
     }
-    // TODO prefilter
-    // if let Some(ref pre) = pre {
-    //     let span = Span::from(at..input.end());
-    //     match pre.find(input.haystack(), span) {
-    //         None => return Ok(mat),
-    //         Some(ref span) => {
-    //             at = span.start;
-    //             if !universal_start {
-    //                 sid = prefilter_restart(dfa, cache, &input, at)?;
-    //             }
-    //         }
-    //     }
-    // }
-    cache.search_start(at!());
-    while at!() < input.end() {
+
+    cache.search_start(input.at());
+    while input.at() < input.end() {
         if sid.is_tagged() {
             ensure_chunk!();
-            cache.search_update(at!());
+            cache.search_update(input.at());
             sid = dfa
-                .next_state(cache, sid, input.haystack()[chunk_at])
-                .map_err(|_| gave_up(at!()))?;
+                .next_state(cache, sid, input.chunk()[input.chunk_pos])
+                .map_err(|_| gave_up(input.at()))?;
         } else {
             // SAFETY: There are two safety invariants we need to uphold
             // here in the loops below: that 'sid' and 'prev_sid' are valid
@@ -549,15 +550,15 @@ fn find_fwd_imp(
             // So I've removed the second loop unrolling that targets the
             // self-transition case.
             let mut prev_sid = sid;
-            while at!() < input.end() {
+            while input.at() < input.end() {
                 ensure_chunk!();
                 prev_sid = unsafe { next_unchecked!(sid) };
-                if prev_sid.is_tagged() || at!() + 3 >= input.end() {
+                if prev_sid.is_tagged() || input.at() + 3 >= input.end() {
                     core::mem::swap(&mut prev_sid, &mut sid);
                     break;
                 }
-                chunk_at += 1;
-                if chunk_at + 2 >= input.haystack().len() {
+                input.chunk_pos += 1;
+                if input.chunk_pos + 3 >= input.chunk().len() {
                     core::mem::swap(&mut prev_sid, &mut sid);
                     continue;
                 }
@@ -566,60 +567,57 @@ fn find_fwd_imp(
                 if sid.is_tagged() {
                     break;
                 }
-                chunk_at += 1;
+                input.chunk_pos += 1;
 
                 prev_sid = unsafe { next_unchecked!(sid) };
                 if prev_sid.is_tagged() {
                     core::mem::swap(&mut prev_sid, &mut sid);
                     break;
                 }
-                chunk_at += 1;
+                input.chunk_pos += 1;
 
                 sid = unsafe { next_unchecked!(prev_sid) };
                 if sid.is_tagged() {
                     break;
                 }
-                chunk_at += 1;
+                input.chunk_pos += 1;
             }
             // If we quit out of the code above with an unknown state ID at
             // any point, then we need to re-compute that transition using
             // 'next_state', which will do NFA powerset construction for us.
             if sid.is_unknown() {
-                cache.search_update(at!());
+                cache.search_update(input.at());
                 sid = dfa
-                    .next_state(cache, prev_sid, input.haystack()[chunk_at])
-                    .map_err(|_| gave_up(chunk_at))?;
+                    .next_state(cache, prev_sid, input.chunk()[input.chunk_pos])
+                    .map_err(|_| gave_up(input.at()))?;
             }
         }
         if sid.is_tagged() {
             if sid.is_start() {
-                // if let Some(ref pre) = pre {
-                //     let span = Span::from(chunk_at..input.end());
-                //     match pre.find(input.haystack(), span) {
-                //         None => {
-                //             cache.search_finish(span.end);
-                //             return Ok(mat);
-                //         }
-                //         Some(ref span) => {
-                //             // We want to skip any update to 'at' below
-                //             // at the end of this iteration and just
-                //             // jump immediately back to the next state
-                //             // transition at the leading position of the
-                //             // candidate match.
-                //             //
-                //             // ... but only if we actually made progress
-                //             // with our prefilter, otherwise if the start
-                //             // state has a self-loop, we can get stuck.
-                //             if span.start > chunk_at {
-                //                 chunk_at = span.start;
-                //                 if !universal_start {
-                //                     sid = prefilter_restart(dfa, cache, &input, chunk_at)?;
-                //                 }
-                //                 continue;
-                //             }
-                //         }
-                //     }
-                // }
+                if let Some(ref pre) = pre {
+                    let old_pos = input.at();
+                    match literal::find(pre, input) {
+                        None => return Ok(mat),
+                        Some(ref span) => {
+                            // We want to skip any update to 'at' below
+                            // at the end of this iteration and just
+                            // jump immediately back to the next state
+                            // transition at the leading position of the
+                            // candidate match.
+                            //
+                            // ... but only if we actually made progress
+                            // with our prefilter, otherwise if the start
+                            // state has a self-loop, we can get stuck.
+                            if span.start > old_pos {
+                                input.move_to(span.start);
+                                if !universal_start {
+                                    sid = prefilter_restart(dfa, cache, input)?;
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                }
             } else if sid.is_match() {
                 let pattern = dfa.match_pattern(cache, sid, 0);
                 // Since slice ranges are inclusive at the beginning and
@@ -629,22 +627,22 @@ fn find_fwd_imp(
                 // match, 'at' has already been set to 1 byte past the actual
                 // match location, which is precisely the exclusive ending
                 // bound of the match.
-                mat = Some(HalfMatch::new(pattern, at!()));
+                mat = Some(HalfMatch::new(pattern, input.at()));
                 if earliest {
-                    cache.search_finish(at!());
+                    cache.search_finish(input.at());
                     return Ok(mat);
                 }
             } else if sid.is_dead() {
-                cache.search_finish(at!());
+                cache.search_finish(input.at());
                 return Ok(mat);
             } else if sid.is_quit() {
-                cache.search_finish(at!());
+                cache.search_finish(input.at());
             } else {
                 debug_assert!(sid.is_unknown());
                 unreachable!("sid being unknown is a bug");
             }
         }
-        chunk_at += 1;
+        input.chunk_pos += 1;
     }
     eoi_fwd(dfa, cache, input, &mut sid, &mut mat)?;
     cache.search_finish(input.end());
@@ -652,11 +650,12 @@ fn find_fwd_imp(
 }
 
 #[inline(never)]
-pub(crate) fn find_rev(
+pub(crate) fn find_rev<C: Cursor>(
     dfa: &DFA,
     cache: &mut Cache,
-    input: &mut Input<'_>,
+    input: &mut Input<C>,
 ) -> Result<Option<HalfMatch>, MatchError> {
+    input.move_to(input.end());
     if input.is_done() {
         return Ok(None);
     }
@@ -668,57 +667,50 @@ pub(crate) fn find_rev(
 }
 
 #[cfg_attr(feature = "perf-inline", inline(always))]
-fn find_rev_imp(
+fn find_rev_imp<C: Cursor>(
     dfa: &DFA,
     cache: &mut Cache,
-    input: &mut Input<'_>,
+    input: &mut Input<C>,
     earliest: bool,
 ) -> Result<Option<HalfMatch>, MatchError> {
     let mut mat = None;
-    let (mut chunk_at, mut sid) = init_rev(dfa, cache, input)?;
+    let mut sid = init_rev(dfa, cache, input)?;
     // In reverse search, the loop below can't handle the case of searching an
     // empty slice. Ideally we could write something congruent to the forward
     // search, i.e., 'while at >= start', but 'start' might be 0. Since we use
     // an unsigned offset, 'at >= 0' is trivially always true. We could avoid
     // this extra case handling by using a signed offset, but Rust makes it
     // annoying to do. So... We just handle the empty case separately.
-    if input.start() == input.end() {
+    if input.start() == input.end() || input.chunk_pos == 0 && !input.backtrack() {
         eoi_rev(dfa, cache, input, &mut sid, &mut mat)?;
         return Ok(mat);
     }
+    input.chunk_pos -= 1;
 
     // This could just be a closure, but then I think it would be unsound
     // because it would need to be safe to invoke. This way, the lack of safety
     // is clearer in the code below.
     macro_rules! next_unchecked {
         ($sid:expr) => {{
-            let byte = *input.haystack().get_unchecked(chunk_at);
+            let byte = *input.chunk().get_unchecked(input.chunk_pos);
             dfa.next_state_untagged_unchecked(cache, $sid, byte)
         }};
     }
-    macro_rules! at {
-        () => {
-            input.haystack_off() + chunk_at
-        };
-    }
     #[rustfmt::skip]
-    macro_rules! ensure_in_chunk {
+    macro_rules! ensure_chunk {
         () => {
-            if chunk_at == 0 {
-                let Some(new_chunk) = input.advance_rev() else{
-                    break;
-                };
-                chunk_at = new_chunk.len() - 1;
+            if input.chunk_pos == 0 && !input.backtrack() {
+                break;
             }
         };
     }
-    cache.search_start(at!());
+    cache.search_start(input.at());
     loop {
         if sid.is_tagged() {
-            cache.search_update(at!());
+            cache.search_update(input.at());
             sid = dfa
-                .next_state(cache, sid, input.haystack()[chunk_at])
-                .map_err(|_| gave_up(at!()))?;
+                .next_state(cache, sid, input.chunk()[input.chunk_pos])
+                .map_err(|_| gave_up(input.at()))?;
         } else {
             // SAFETY: See comments in 'find_fwd' for a safety argument.
             //
@@ -743,16 +735,16 @@ fn find_rev_imp(
             //
             // NOTE: I used 'OpenSubtitles2018.raw.sample.en' for 'bigfile'.
             let mut prev_sid = sid;
-            while at!() >= input.start() {
+            while input.at() >= input.start() {
                 prev_sid = unsafe { next_unchecked!(sid) };
-                if prev_sid.is_tagged() || at!() <= input.start().saturating_add(3) {
+                if prev_sid.is_tagged() || input.at() <= input.start().saturating_add(3) {
                     core::mem::swap(&mut prev_sid, &mut sid);
                     break;
                 }
-                chunk_at -= 1;
-                if chunk_at <= 2 {
+                ensure_chunk!();
+                input.chunk_pos -= 1;
+                if input.chunk_pos <= 2 {
                     core::mem::swap(&mut prev_sid, &mut sid);
-                    ensure_in_chunk!();
                     continue;
                 }
 
@@ -760,30 +752,29 @@ fn find_rev_imp(
                 if sid.is_tagged() {
                     break;
                 }
-                chunk_at -= 1;
+                input.chunk_pos -= 1;
 
                 prev_sid = unsafe { next_unchecked!(sid) };
                 if prev_sid.is_tagged() {
                     core::mem::swap(&mut prev_sid, &mut sid);
                     break;
                 }
-                chunk_at -= 1;
+                input.chunk_pos -= 1;
 
                 sid = unsafe { next_unchecked!(prev_sid) };
                 if sid.is_tagged() {
                     break;
                 }
-                chunk_at -= 1;
-                ensure_in_chunk!();
+                input.chunk_pos -= 1;
             }
             // If we quit out of the code above with an unknown state ID at
             // any point, then we need to re-compute that transition using
             // 'next_state', which will do NFA powerset construction for us.
             if sid.is_unknown() {
-                cache.search_update(at!());
+                cache.search_update(input.at());
                 sid = dfa
-                    .next_state(cache, prev_sid, input.haystack()[chunk_at])
-                    .map_err(|_| gave_up(at!()))?;
+                    .next_state(cache, prev_sid, input.chunk()[input.chunk_pos])
+                    .map_err(|_| gave_up(input.at()))?;
             }
         }
         if sid.is_tagged() {
@@ -794,27 +785,27 @@ fn find_rev_imp(
                 // Since reverse searches report the beginning of a match
                 // and the beginning is inclusive (not exclusive like the
                 // end of a match), we add 1 to make it inclusive.
-                mat = Some(HalfMatch::new(pattern, at!() + 1));
+                mat = Some(HalfMatch::new(pattern, input.at() + 1));
                 if earliest {
-                    cache.search_finish(at!());
+                    cache.search_finish(input.at());
                     return Ok(mat);
                 }
             } else if sid.is_dead() {
-                cache.search_finish(at!());
+                cache.search_finish(input.at());
                 return Ok(mat);
             } else if sid.is_quit() {
-                cache.search_finish(at!());
-                return Err(MatchError::quit(input.haystack()[chunk_at], at!()));
+                cache.search_finish(input.at());
+                return Err(MatchError::quit(input.chunk()[input.chunk_pos], input.at()));
             } else {
                 debug_assert!(sid.is_unknown());
                 unreachable!("sid being unknown is a bug");
             }
         }
-        if at!() <= input.start() {
+        if input.at() <= input.start() {
             break;
         }
-        ensure_in_chunk!();
-        chunk_at -= 1;
+        ensure_chunk!();
+        input.chunk_pos -= 1;
     }
     cache.search_finish(input.start());
     eoi_rev(dfa, cache, input, &mut sid, &mut mat)?;
@@ -822,54 +813,67 @@ fn find_rev_imp(
 }
 
 #[cfg_attr(feature = "perf-inline", inline(always))]
-fn init_fwd(
+fn init_fwd<C: Cursor>(
     dfa: &DFA,
     cache: &mut Cache,
-    input: &mut Input,
-) -> Result<(usize, LazyStateID), MatchError> {
-    let sid = dfa.start_state_forward_with(
-        cache,
-        input.get_anchored(),
-        input.look_behind(),
-        input.get_span(),
-    )?;
-    // Start states can never be match states, since all matches are delayed
-    // by 1 byte.
-    debug_assert!(!sid.is_match());
-    let start = input.move_to(input.start()).unwrap_or_default();
-    Ok((start, sid))
+    input: &mut Input<C>,
+) -> Result<LazyStateID, MatchError> {
+    let chunk_pos = input.chunk_pos();
+    let look_behind = if chunk_pos == 0 {
+        input.ensure_look_behind().and_then(|chunk| chunk.last().copied())
+    } else {
+        input.chunk().get(chunk_pos - 1).copied()
+    };
+    let start_config = start::Config::new().look_behind(look_behind).anchored(input.get_anchored());
+    // let sid = dfa.start_state(&start_config)?;
+    dfa.start_state(cache, &start_config).map_err(|err| match err {
+        StartError::Quit { byte } => {
+            let offset = input.at().checked_sub(1).expect("no quit in start without look-behind");
+            MatchError::quit(byte, offset)
+        }
+        StartError::UnsupportedAnchored { mode } => MatchError::unsupported_anchored(mode),
+        _ => panic!("damm forward compatability"),
+    })
 }
 
 #[cfg_attr(feature = "perf-inline", inline(always))]
-fn init_rev(
+fn init_rev<C: Cursor>(
     dfa: &DFA,
     cache: &mut Cache,
-    input: &mut Input,
-) -> Result<(usize, LazyStateID), MatchError> {
-    let sid = dfa.start_state_reverse_with(
-        cache,
-        input.get_anchored(),
-        input.look_ahead(),
-        input.get_span(),
-    )?;
-    // Start states can never be match states, since all matches are delayed
-    // by 1 byte.
-    debug_assert!(!sid.is_match());
-    let start = input.move_to(input.end() - 1).unwrap_or_default();
-    Ok((start, sid))
+    input: &mut Input<C>,
+) -> Result<LazyStateID, MatchError> {
+    let chunk_pos = input.chunk_pos();
+    let mut look_ahead = input.chunk().get(chunk_pos).copied();
+    // this branch is probably not need since chunk_pos should be in bounds
+    // anyway but I would rather not make that a validity invariant
+    if look_ahead.is_none() && input.advance() {
+        look_ahead = input.chunk().first().copied();
+        input.backtrack();
+    }
+    let start_config = start::Config::new().look_behind(look_ahead).anchored(input.get_anchored());
+    dfa.start_state(cache, &start_config).map_err(|err| match err {
+        StartError::Quit { byte } => {
+            let offset =
+                input.start().checked_sub(1).expect("no quit in start without look-behind");
+            MatchError::quit(byte, offset)
+        }
+        StartError::UnsupportedAnchored { mode } => MatchError::unsupported_anchored(mode),
+        _ => panic!("damm forward compatability"),
+    })
 }
 
 #[cfg_attr(feature = "perf-inline", inline(always))]
-fn eoi_fwd(
+fn eoi_fwd<C: Cursor>(
     dfa: &DFA,
     cache: &mut Cache,
-    input: &mut Input<'_>,
+    input: &mut Input<C>,
     sid: &mut LazyStateID,
     mat: &mut Option<HalfMatch>,
 ) -> Result<(), MatchError> {
     let sp = input.get_span();
-    match input.look_ahead() {
-        Some(b) => {
+    input.move_to(sp.end);
+    match input.chunk().get(sp.end - input.chunk_offset()) {
+        Some(&b) => {
             *sid = dfa.next_state(cache, *sid, b).map_err(|_| gave_up(sp.end))?;
             if sid.is_match() {
                 let pattern = dfa.match_pattern(cache, *sid, 0);
@@ -893,16 +897,18 @@ fn eoi_fwd(
 }
 
 #[cfg_attr(feature = "perf-inline", inline(always))]
-fn eoi_rev(
+fn eoi_rev<C: Cursor>(
     dfa: &DFA,
     cache: &mut Cache,
-    input: &mut Input<'_>,
+    input: &mut Input<C>,
     sid: &mut LazyStateID,
     mat: &mut Option<HalfMatch>,
 ) -> Result<(), MatchError> {
     let sp = input.get_span();
     // debug_assert_eq!(sp.start, 0);
-    if let Some(byte) = input.look_behind() {
+    if sp.start > 0 {
+        input.move_to(input.start() - 1);
+        let byte = input.chunk()[sp.start - input.chunk_offset() - 1];
         *sid = dfa.next_state(cache, *sid, byte).map_err(|_| gave_up(sp.start))?;
         if sid.is_match() {
             let pattern = dfa.match_pattern(cache, *sid, 0);
@@ -963,4 +969,17 @@ fn eoi_rev(
 #[cfg_attr(feature = "perf-inline", inline(always))]
 fn gave_up(offset: usize) -> MatchError {
     MatchError::gave_up(offset)
+}
+
+/// Re-compute the starting state that a DFA should be in after finding a
+/// prefilter candidate match at the position `at`.
+///
+/// The function with the same name has a bit more docs in hybrid/search.rs.
+#[cfg_attr(feature = "perf-inline", inline(always))]
+fn prefilter_restart<C: Cursor>(
+    dfa: &DFA,
+    cache: &mut Cache,
+    input: &mut Input<C>,
+) -> Result<LazyStateID, MatchError> {
+    init_fwd(dfa, cache, input)
 }
