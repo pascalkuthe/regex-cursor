@@ -13,7 +13,7 @@ use regex_automata::{Anchored, Span};
 use crate::cursor::{Cursor, IntoCursor};
 use crate::util::utf8::is_boundary;
 
-const LOOK_BEHIND_SIZE: usize = 4;
+const MAX_CODEPOINT_LEN: usize = 4;
 
 pub struct Input<C: Cursor> {
     // span: Span,
@@ -24,8 +24,9 @@ pub struct Input<C: Cursor> {
     /// Position within the current chunk
     pub(crate) chunk_pos: usize,
     span: Span,
+    look_behind_len: usize,
     /// the last 4 bytes before the current chunk
-    look_behind: [u8; LOOK_BEHIND_SIZE],
+    look_around: [u8; MAX_CODEPOINT_LEN * 2],
     cursor: C,
 }
 
@@ -50,8 +51,9 @@ impl<C: Cursor> Input<C> {
             // init with invalid utf8. We don't need to track
             // which of these have been filed since we only look
             // behind more than one byte in utf8 mode
-            look_behind: [255; 4],
+            look_around: [255; 8],
             span: Span { start: offset, end: usize::MAX },
+            look_behind_len: 0,
         }
     }
 
@@ -107,6 +109,11 @@ impl<C: Cursor> Input<C> {
     #[inline]
     pub fn start(&self) -> usize {
         self.get_span().start
+    }
+
+    #[inline]
+    pub fn clear_look_behind(&mut self) {
+        self.look_around = [255; 8];
     }
 
     /// Return the end position of this search.
@@ -166,19 +173,20 @@ impl<C: Cursor> Input<C> {
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    fn set_look_behind(&mut self) {
+    pub(crate) fn set_look_behind(&mut self) {
         #[cold]
-        fn copy_partial_look_behind(look_behind: &mut [u8; LOOK_BEHIND_SIZE], chunk: &[u8]) {
-            look_behind[LOOK_BEHIND_SIZE - chunk.len()..LOOK_BEHIND_SIZE].copy_from_slice(chunk)
+        fn copy_partial_look_behind(look_behind: &mut [u8; MAX_CODEPOINT_LEN * 2], chunk: &[u8]) {
+            look_behind[..chunk.len()].copy_from_slice(chunk)
         }
 
-        let old_chunk = self.cursor.chunk();
-        let old_len = old_chunk.len();
-        if old_len < LOOK_BEHIND_SIZE {
-            copy_partial_look_behind(&mut self.look_behind, old_chunk);
+        let chunk = self.cursor.chunk();
+        let len = chunk.len();
+        if len < MAX_CODEPOINT_LEN {
+            copy_partial_look_behind(&mut self.look_around, chunk);
+            self.look_behind_len = chunk.len();
         } else {
-            self.look_behind[..LOOK_BEHIND_SIZE]
-                .copy_from_slice(&old_chunk[old_len - LOOK_BEHIND_SIZE..])
+            self.look_behind_len = MAX_CODEPOINT_LEN;
+            self.look_around[..MAX_CODEPOINT_LEN].copy_from_slice(&chunk[len - MAX_CODEPOINT_LEN..])
         }
     }
 
@@ -216,22 +224,42 @@ impl<C: Cursor> Input<C> {
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub(crate) fn ensure_look_behind(&mut self) -> Option<&[u8]> {
-        if self.chunk_offset == 0 {
-            return None;
+    pub(crate) fn ensure_look_behind(&mut self) -> Option<u8> {
+        if self.chunk_pos == 0 {
+            // move back to the last chunk to read the look behind
+            if self.backtrack() {
+                self.advance_with_look_behind();
+                Some(self.look_around[self.look_behind_len - 1])
+            } else {
+                None
+            }
+        } else {
+            self.chunk().get(self.chunk_pos - 1).copied()
         }
-        // move back to the last chunk to read the look behind
-        self.backtrack();
-        self.advance();
-        Some(&self.look_behind)
     }
 
-    #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub(crate) fn look_behind(&mut self) -> Option<&[u8]> {
-        if self.chunk_offset == 0 {
-            return None;
+    pub fn look_around(&mut self) -> (&[u8], usize) {
+        // TODO: cache look_ahead?
+        if self.chunk_pos == 0 {
+            #[cold]
+            fn copy_partial_look_ahead(look_behind: &mut [u8], chunk: &[u8]) {
+                look_behind[..chunk.len()].copy_from_slice(chunk)
+            }
+
+            let chunk = self.cursor.chunk();
+            let look_around_len;
+            if chunk.len() < MAX_CODEPOINT_LEN {
+                look_around_len = self.look_behind_len + chunk.len();
+                copy_partial_look_ahead(&mut self.look_around[self.look_behind_len..], chunk);
+            } else {
+                look_around_len = self.look_behind_len + MAX_CODEPOINT_LEN;
+                self.look_around[self.look_behind_len..look_around_len]
+                    .copy_from_slice(&chunk[..MAX_CODEPOINT_LEN])
+            }
+            (&self.look_around[..look_around_len], self.look_behind_len)
+        } else {
+            (self.chunk(), self.chunk_pos)
         }
-        Some(&self.look_behind)
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]

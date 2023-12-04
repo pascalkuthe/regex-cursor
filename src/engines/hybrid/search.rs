@@ -818,12 +818,7 @@ fn init_fwd<C: Cursor>(
     cache: &mut Cache,
     input: &mut Input<C>,
 ) -> Result<LazyStateID, MatchError> {
-    let chunk_pos = input.chunk_pos();
-    let look_behind = if chunk_pos == 0 {
-        input.ensure_look_behind().and_then(|chunk| chunk.last().copied())
-    } else {
-        input.chunk().get(chunk_pos - 1).copied()
-    };
+    let look_behind = input.ensure_look_behind();
     let start_config = start::Config::new().look_behind(look_behind).anchored(input.get_anchored());
     // let sid = dfa.start_state(&start_config)?;
     dfa.start_state(cache, &start_config).map_err(|err| match err {

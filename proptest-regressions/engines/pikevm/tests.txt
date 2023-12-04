@@ -5,3 +5,6 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 4c899804f8e28d294268b2c482879338edc3be0210465aeaf6a03d65626d386f # shrinks to haystack = "Ѩ", needle = "Ѩ*|A0"
+cc 9dcbeee2d5ffde3324638f38b2eefc96a95b0665810c02c12093976a0aba96c5 # shrinks to haystack = "", needle = "^"
+cc 0311c531b8a3e09dc21270ace24fc7cdec1d773228a9ce3843888afe4774c4a2 # shrinks to haystack = "", needle = "$"
+cc 578435f522160de6326c7cf57b367dc9e52679b796ecf8d331a9684a9ef4d1f7 # shrinks to haystack = " ", needle = "."
