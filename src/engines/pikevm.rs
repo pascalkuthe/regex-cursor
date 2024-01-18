@@ -1,7 +1,7 @@
 #[cfg(feature = "internal-instrument-pikevm")]
 use core::cell::RefCell;
 
-pub use regex_automata::nfa::thompson::pikevm::PikeVM;
+pub use regex_automata::nfa::thompson::pikevm::{Builder, Config, PikeVM};
 use regex_automata::nfa::thompson::State;
 use regex_automata::util::captures::Captures;
 use regex_automata::util::primitives::{NonMaxUsize, SmallIndex, StateID};
@@ -42,7 +42,7 @@ pub fn find_iter<'r, 'c, C: Cursor>(
     input: Input<C>,
 ) -> FindMatches<'r, 'c, C> {
     let caps = Captures::matches(vm.get_nfa().group_info().clone());
-    let it = iter::Searcher::new(input.into());
+    let it = iter::Searcher::new(input);
     FindMatches { re: vm, cache, caps, it }
 }
 
@@ -131,6 +131,71 @@ pub fn search<C: Cursor>(
     caps.set_pattern(None);
     let pid = search_slots(vm, cache, input, caps.slots_mut());
     caps.set_pattern(pid);
+}
+
+/// Returns true if and only if this `PikeVM` matches the given haystack.
+///
+/// This routine may short circuit if it knows that scanning future
+/// input will never lead to a different result. In particular, if the
+/// underlying NFA enters a match state, then this routine will return
+/// `true` immediately without inspecting any future input. (Consider how
+/// this might make a difference given the regex `a+` on the haystack
+/// `aaaaaaaaaaaaaaa`. This routine can stop after it sees the first `a`,
+/// but routines like `find` need to continue searching because `+` is
+/// greedy by default.)
+///
+/// # Example
+///
+/// This shows basic usage:
+///
+/// ```
+/// use regex_automata::nfa::thompson::pikevm::PikeVM;
+///
+/// let re = PikeVM::new("foo[0-9]+bar")?;
+/// let mut cache = re.create_cache();
+///
+/// assert!(re.is_match(&mut cache, "foo12345bar"));
+/// assert!(!re.is_match(&mut cache, "foobar"));
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// # Example: consistency with search APIs
+///
+/// `is_match` is guaranteed to return `true` whenever `find` returns a
+/// match. This includes searches that are executed entirely within a
+/// codepoint:
+///
+/// ```
+/// use regex_automata::{nfa::thompson::pikevm::PikeVM, Input};
+///
+/// let re = PikeVM::new("a*")?;
+/// let mut cache = re.create_cache();
+///
+/// assert!(!re.is_match(&mut cache, Input::new("☃").span(1..2)));
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// Notice that when UTF-8 mode is disabled, then the above reports a
+/// match because the restriction against zero-width matches that split a
+/// codepoint has been lifted:
+///
+/// ```
+/// use regex_automata::{nfa::thompson::{pikevm::PikeVM, NFA}, Input};
+///
+/// let re = PikeVM::builder()
+///     .thompson(NFA::config().utf8(false))
+///     .build("a*")?;
+/// let mut cache = re.create_cache();
+///
+/// assert!(re.is_match(&mut cache, Input::new("☃").span(1..2)));
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+#[inline]
+pub fn is_match<C: Cursor>(vm: &PikeVM, cache: &mut Cache, input: &mut Input<C>) -> bool {
+    input.with(|input| {
+        let input = input.earliest(true);
+        search_slots(vm, cache, input, &mut []).is_some()
+    })
 }
 /// A simple macro for conditionally executing instrumentation logic when
 /// the 'trace' log level is enabled. This is a compile-time no-op when the
@@ -376,7 +441,7 @@ fn search_imp<C: Cursor>(
         // search. If we re-computed it at every position, we would be
         // simulating an unanchored search when we were tasked to perform
         // an anchored search.
-        if (!hm.is_some() || allmatches) && (!anchored || input.at() == input.start()) {
+        if (hm.is_none() || allmatches) && (!anchored || input.at() == input.start()) {
             // Since we are adding to the 'curr' active states and since
             // this is for the start ID, we use a slots slice that is
             // guaranteed to have the right length but where every element

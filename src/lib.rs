@@ -1,7 +1,9 @@
+pub use cursor::Cursor;
 pub use input::Input;
 
 mod cursor;
-mod engines;
+pub mod engines;
 mod input;
 mod literal;
+pub mod meta;
 mod util;

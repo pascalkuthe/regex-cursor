@@ -2,9 +2,10 @@ pub use regex_automata::hybrid::regex::{Cache, Regex};
 use regex_automata::{Anchored, Match, MatchError};
 
 use crate::cursor::Cursor;
-use crate::engines::hybrid::search::try_search_fwd;
 use crate::input::Input;
 use crate::util::iter;
+
+pub use crate::engines::hybrid::search::{try_search_fwd, try_search_rev};
 
 mod search;
 #[cfg(test)]
@@ -66,7 +67,7 @@ fn is_anchored(regex: &Regex, input: &Input<impl Cursor>) -> bool {
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[inline]
-pub fn find_iter<'r, 'c, 'h, C: Cursor>(
+pub fn find_iter<'r, 'c, C: Cursor>(
     regex: &'r Regex,
     cache: &'c mut Cache,
     input: Input<C>,
@@ -198,7 +199,7 @@ pub fn try_search<C: Cursor>(
     let match_range = input.start()..end.offset();
     let start = input.with(|mut revsearch| {
         revsearch = revsearch.span(match_range).anchored(Anchored::Yes).earliest(false);
-        search::try_search_rev(regex.reverse(), rcache, revsearch)
+        try_search_rev(regex.reverse(), rcache, revsearch)
     });
     let start = start?.expect("reverse search must match if forward search does");
     debug_assert_eq!(

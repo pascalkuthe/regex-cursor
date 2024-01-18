@@ -1,3 +1,3 @@
-mod dfa;
-mod hybrid;
-mod pikevm;
+pub mod dfa;
+pub mod hybrid;
+pub mod pikevm;

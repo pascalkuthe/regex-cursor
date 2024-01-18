@@ -20,61 +20,6 @@ use std::vec::Vec;
 
 use regex_automata::util::primitives::StateID;
 
-/// A pairse of sparse sets.
-///
-/// This is useful when one needs to compute NFA epsilon closures from a
-/// previous set of states derived from an epsilon closure. One set can be the
-/// starting states where as the other set can be the destination states after
-/// following the transitions for a particular byte of input.
-///
-/// There is no significance to 'set1' or 'set2'. They are both sparse sets of
-/// the same size.
-///
-/// The members of this struct are exposed so that callers may borrow 'set1'
-/// and 'set2' individually without being force to borrow both at the same
-/// time.
-#[derive(Clone, Debug)]
-pub(crate) struct SparseSets {
-    pub(crate) set1: SparseSet,
-    pub(crate) set2: SparseSet,
-}
-
-impl SparseSets {
-    /// Create a new pair of sparse sets where each set has the given capacity.
-    ///
-    /// This panics if the capacity given is bigger than `StateID::LIMIT`.
-    pub(crate) fn new(capacity: usize) -> SparseSets {
-        SparseSets { set1: SparseSet::new(capacity), set2: SparseSet::new(capacity) }
-    }
-
-    /// Resizes these sparse sets to have the new capacity given.
-    ///
-    /// The sets are automatically cleared.
-    ///
-    /// This panics if the capacity given is bigger than `StateID::LIMIT`.
-    #[inline]
-    pub(crate) fn resize(&mut self, new_capacity: usize) {
-        self.set1.resize(new_capacity);
-        self.set2.resize(new_capacity);
-    }
-
-    /// Clear both sparse sets.
-    pub(crate) fn clear(&mut self) {
-        self.set1.clear();
-        self.set2.clear();
-    }
-
-    /// Swap set1 with set2.
-    pub(crate) fn swap(&mut self) {
-        core::mem::swap(&mut self.set1, &mut self.set2);
-    }
-
-    /// Returns the memory usage, in bytes, used by this pair of sparse sets.
-    pub(crate) fn memory_usage(&self) -> usize {
-        self.set1.memory_usage() + self.set2.memory_usage()
-    }
-}
-
 /// A sparse set used for representing ordered NFA states.
 ///
 /// This supports constant time addition and membership testing. Clearing an
@@ -232,6 +177,6 @@ impl<'a> Iterator for SparseSetIter<'a> {
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
     fn next(&mut self) -> Option<StateID> {
-        self.0.next().map(|&id| id)
+        self.0.next().copied()
     }
 }

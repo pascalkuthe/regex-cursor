@@ -93,7 +93,6 @@ proptest! {
   }
   #[test]
   fn matches_word(haystack: String, needle in r"\\b\PC+\\b") {
-    println!("{needle}");
     let foo = ropey::Rope::from_str(&haystack);
     let Ok(regex) = PikeVM::builder().syntax(Config::new().case_insensitive(true)).build(&needle) else {
         return Ok(())

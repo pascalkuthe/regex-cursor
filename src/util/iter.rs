@@ -177,102 +177,102 @@ impl<C: Cursor> Searcher<C> {
         &mut self.input
     }
 
-    /// Return the next half match for an infallible search if one exists, and
-    /// advance to the next position.
-    ///
-    /// This is like `try_advance_half`, except errors are converted into
-    /// panics.
-    ///
-    /// # Panics
-    ///
-    /// If the given closure returns an error, then this panics. This is useful
-    /// when you know your underlying regex engine has been configured to not
-    /// return an error.
-    ///
-    /// # Example
-    ///
-    /// This example shows how to use a `Searcher` to iterate over all matches
-    /// when using a DFA, which only provides "half" matches.
-    ///
-    /// ```
-    /// use regex_automata::{
-    ///     hybrid::dfa::DFA,
-    ///     util::iter::Searcher,
-    ///     HalfMatch, Input,
-    /// };
-    ///
-    /// let re = DFA::new(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")?;
-    /// let mut cache = re.create_cache();
-    ///
-    /// let input = Input::new("2010-03-14 2016-10-08 2020-10-22");
-    /// let mut it = Searcher::new(input);
-    ///
-    /// let expected = Some(HalfMatch::must(0, 10));
-    /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
-    /// assert_eq!(expected, got);
-    ///
-    /// let expected = Some(HalfMatch::must(0, 21));
-    /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
-    /// assert_eq!(expected, got);
-    ///
-    /// let expected = Some(HalfMatch::must(0, 32));
-    /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
-    /// assert_eq!(expected, got);
-    ///
-    /// let expected = None;
-    /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
-    /// assert_eq!(expected, got);
-    ///
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
-    ///
-    /// This correctly moves iteration forward even when an empty match occurs:
-    ///
-    /// ```
-    /// use regex_automata::{
-    ///     hybrid::dfa::DFA,
-    ///     util::iter::Searcher,
-    ///     HalfMatch, Input,
-    /// };
-    ///
-    /// let re = DFA::new(r"a|")?;
-    /// let mut cache = re.create_cache();
-    ///
-    /// let input = Input::new("abba");
-    /// let mut it = Searcher::new(input);
-    ///
-    /// let expected = Some(HalfMatch::must(0, 1));
-    /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
-    /// assert_eq!(expected, got);
-    ///
-    /// let expected = Some(HalfMatch::must(0, 2));
-    /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
-    /// assert_eq!(expected, got);
-    ///
-    /// let expected = Some(HalfMatch::must(0, 4));
-    /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
-    /// assert_eq!(expected, got);
-    ///
-    /// let expected = None;
-    /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
-    /// assert_eq!(expected, got);
-    ///
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
-    #[inline]
-    pub fn advance_half<F>(&mut self, finder: F) -> Option<HalfMatch>
-    where
-        F: FnMut(&mut Input<C>) -> Result<Option<HalfMatch>, MatchError>,
-    {
-        match self.try_advance_half(finder) {
-            Ok(m) => m,
-            Err(err) => panic!(
-                "unexpected regex half find error: {}\n\
-                 to handle find errors, use 'try' or 'search' methods",
-                err,
-            ),
-        }
-    }
+    // /// Return the next half match for an infallible search if one exists, and
+    // /// advance to the next position.
+    // ///
+    // /// This is like `try_advance_half`, except errors are converted into
+    // /// panics.
+    // ///
+    // /// # Panics
+    // ///
+    // /// If the given closure returns an error, then this panics. This is useful
+    // /// when you know your underlying regex engine has been configured to not
+    // /// return an error.
+    // ///
+    // /// # Example
+    // ///
+    // /// This example shows how to use a `Searcher` to iterate over all matches
+    // /// when using a DFA, which only provides "half" matches.
+    // ///
+    // /// ```
+    // /// use regex_automata::{
+    // ///     hybrid::dfa::DFA,
+    // ///     util::iter::Searcher,
+    // ///     HalfMatch, Input,
+    // /// };
+    // ///
+    // /// let re = DFA::new(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")?;
+    // /// let mut cache = re.create_cache();
+    // ///
+    // /// let input = Input::new("2010-03-14 2016-10-08 2020-10-22");
+    // /// let mut it = Searcher::new(input);
+    // ///
+    // /// let expected = Some(HalfMatch::must(0, 10));
+    // /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
+    // /// assert_eq!(expected, got);
+    // ///
+    // /// let expected = Some(HalfMatch::must(0, 21));
+    // /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
+    // /// assert_eq!(expected, got);
+    // ///
+    // /// let expected = Some(HalfMatch::must(0, 32));
+    // /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
+    // /// assert_eq!(expected, got);
+    // ///
+    // /// let expected = None;
+    // /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
+    // /// assert_eq!(expected, got);
+    // ///
+    // /// # Ok::<(), Box<dyn std::error::Error>>(())
+    // /// ```
+    // ///
+    // /// This correctly moves iteration forward even when an empty match occurs:
+    // ///
+    // /// ```
+    // /// use regex_automata::{
+    // ///     hybrid::dfa::DFA,
+    // ///     util::iter::Searcher,
+    // ///     HalfMatch, Input,
+    // /// };
+    // ///
+    // /// let re = DFA::new(r"a|")?;
+    // /// let mut cache = re.create_cache();
+    // ///
+    // /// let input = Input::new("abba");
+    // /// let mut it = Searcher::new(input);
+    // ///
+    // /// let expected = Some(HalfMatch::must(0, 1));
+    // /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
+    // /// assert_eq!(expected, got);
+    // ///
+    // /// let expected = Some(HalfMatch::must(0, 2));
+    // /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
+    // /// assert_eq!(expected, got);
+    // ///
+    // /// let expected = Some(HalfMatch::must(0, 4));
+    // /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
+    // /// assert_eq!(expected, got);
+    // ///
+    // /// let expected = None;
+    // /// let got = it.advance_half(|input| re.try_search_fwd(&mut cache, input));
+    // /// assert_eq!(expected, got);
+    // ///
+    // /// # Ok::<(), Box<dyn std::error::Error>>(())
+    // /// ```
+    // #[inline]
+    // pub fn advance_half<F>(&mut self, finder: F) -> Option<HalfMatch>
+    // where
+    //     F: FnMut(&mut Input<C>) -> Result<Option<HalfMatch>, MatchError>,
+    // {
+    //     match self.try_advance_half(finder) {
+    //         Ok(m) => m,
+    //         Err(err) => panic!(
+    //             "unexpected regex half find error: {}\n\
+    //              to handle find errors, use 'try' or 'search' methods",
+    //             err,
+    //         ),
+    //     }
+    // }
 
     /// Return the next match for an infallible search if one exists, and
     /// advance to the next position.
@@ -585,27 +585,27 @@ pub struct TryHalfMatchesIter<C: Cursor, F> {
     finder: F,
 }
 
-impl<'i, C: Cursor, F> TryHalfMatchesIter<C, F> {
-    /// Return an infallible version of this iterator.
-    ///
-    /// Any item yielded that corresponds to an error results in a panic. This
-    /// is useful if your underlying regex engine is configured in a way that
-    /// it is guaranteed to never return an error.
-    pub fn infallible(self) -> HalfMatchesIter<C, F> {
-        HalfMatchesIter(self)
-    }
+// impl<C: Cursor, F> TryHalfMatchesIter<C, F> {
+//     /// Return an infallible version of this iterator.
+//     ///
+//     /// Any item yielded that corresponds to an error results in a panic. This
+//     /// is useful if your underlying regex engine is configured in a way that
+//     /// it is guaranteed to never return an error.
+//     pub fn infallible(self) -> HalfMatchesIter<C, F> {
+//         HalfMatchesIter(self)
+//     }
 
-    /// Returns the current `Input` used by this iterator.
-    ///
-    /// The `Input` returned is generally equivalent to the one used to
-    /// construct this iterator, but its start position may be different to
-    /// reflect the start of the next search to be executed.
-    pub fn input(&mut self) -> &mut Input<C> {
-        self.it.input()
-    }
-}
+//     /// Returns the current `Input` used by this iterator.
+//     ///
+//     /// The `Input` returned is generally equivalent to the one used to
+//     /// construct this iterator, but its start position may be different to
+//     /// reflect the start of the next search to be executed.
+//     pub fn input(&mut self) -> &mut Input<C> {
+//         self.it.input()
+//     }
+// }
 
-impl<'i, C: Cursor, F> Iterator for TryHalfMatchesIter<C, F>
+impl<C: Cursor, F> Iterator for TryHalfMatchesIter<C, F>
 where
     F: FnMut(&mut Input<C>) -> Result<Option<HalfMatch>, MatchError>,
 {
@@ -617,7 +617,7 @@ where
     }
 }
 
-impl<'i, C: Cursor, F> core::fmt::Debug for TryHalfMatchesIter<C, F> {
+impl<C: Cursor, F> core::fmt::Debug for TryHalfMatchesIter<C, F> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("TryHalfMatchesIter")
             .field("it", &self.it)
@@ -648,50 +648,50 @@ impl<'i, C: Cursor, F> core::fmt::Debug for TryHalfMatchesIter<C, F> {
 #[derive(Debug)]
 pub struct HalfMatchesIter<C: Cursor, F>(TryHalfMatchesIter<C, F>);
 
-impl<'i, C: Cursor, F> HalfMatchesIter<C, F> {
-    /// Returns the current `Input` used by this iterator.
-    ///
-    /// The `Input` returned is generally equivalent to the one used to
-    /// construct this iterator, but its start position may be different to
-    /// reflect the start of the next search to be executed.
-    pub fn input(&mut self) -> &mut Input<C> {
-        self.0.it.input()
-    }
-}
+// impl<C: Cursor, F> HalfMatchesIter<C, F> {
+//     /// Returns the current `Input` used by this iterator.
+//     ///
+//     /// The `Input` returned is generally equivalent to the one used to
+//     /// construct this iterator, but its start position may be different to
+//     /// reflect the start of the next search to be executed.
+//     pub fn input(&mut self) -> &mut Input<C> {
+//         self.0.it.input()
+//     }
+// }
 
-impl<'i, C: Cursor, F> Iterator for HalfMatchesIter<C, F>
-where
-    F: FnMut(&mut Input<C>) -> Result<Option<HalfMatch>, MatchError>,
-{
-    type Item = HalfMatch;
+// impl<C: Cursor, F> Iterator for HalfMatchesIter<C, F>
+// where
+//     F: FnMut(&mut Input<C>) -> Result<Option<HalfMatch>, MatchError>,
+// {
+//     type Item = HalfMatch;
 
-    #[inline]
-    fn next(&mut self) -> Option<HalfMatch> {
-        match self.0.next()? {
-            Ok(m) => Some(m),
-            Err(err) => panic!(
-                "unexpected regex half find error: {}\n\
-                 to handle find errors, use 'try' or 'search' methods",
-                err,
-            ),
-        }
-    }
-}
+//     #[inline]
+//     fn next(&mut self) -> Option<HalfMatch> {
+//         match self.0.next()? {
+//             Ok(m) => Some(m),
+//             Err(err) => panic!(
+//                 "unexpected regex half find error: {}\n\
+//                  to handle find errors, use 'try' or 'search' methods",
+//                 err,
+//             ),
+//         }
+//     }
+// }
 
-#[cfg(test)]
-pub fn assert_eq<T: PartialEq + Debug>(
-    mut iter1: impl Iterator<Item = T>,
-    mut iter2: impl Iterator<Item = T>,
-) {
-    let mut i = 0;
-    loop {
-        match (iter1.next(), iter2.next()) {
-            (None, None) => break,
-            (iter1, iter2) => assert_eq!(iter1, iter2, "{i}"),
-        }
-        i += 1;
-    }
-}
+// #[cfg(test)]
+// pub fn assert_eq<T: PartialEq + Debug>(
+//     mut iter1: impl Iterator<Item = T>,
+//     mut iter2: impl Iterator<Item = T>,
+// ) {
+//     let mut i = 0;
+//     loop {
+//         match (iter1.next(), iter2.next()) {
+//             (None, None) => break,
+//             (iter1, iter2) => assert_eq!(iter1, iter2, "{i}"),
+//         }
+//         i += 1;
+//     }
+// }
 
 #[cfg(test)]
 pub fn prop_assert_eq<T: PartialEq + Debug>(

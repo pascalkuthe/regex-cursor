@@ -594,7 +594,7 @@ fn find_fwd_imp<C: Cursor>(
         }
         if sid.is_tagged() {
             if sid.is_start() {
-                if let Some(ref pre) = pre {
+                if let Some(pre) = pre {
                     let old_pos = input.at();
                     match literal::find(pre, input) {
                         None => return Ok(mat),

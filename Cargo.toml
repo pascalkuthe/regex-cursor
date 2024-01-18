@@ -6,9 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+log = "0.4.20"
 memchr = "2.6"
 regex-automata = { version =  "0.4.2", path = "../regex/regex-automata" }
-regex-syntax = "0.8.2"
+regex-syntax = { version =  "0.8.2", path = "../regex/regex-syntax" }
 ropey = "1.6.0"
 
 [dev-dependencies]

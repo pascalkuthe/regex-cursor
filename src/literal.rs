@@ -16,6 +16,33 @@ pub fn find<C: Cursor>(prefilter: &Prefilter, input: &mut Input<C>) -> Option<Sp
     }
 }
 
+pub fn prefix<C: Cursor>(prefilter: &Prefilter, input: &mut Input<C>) -> Option<Span> {
+    let mut offset = input.chunk_offset();
+    let chunk_pos = input.chunk_pos();
+    let chunk_end = input.get_chunk_end();
+    let mut res = if prefilter.max_needle_len() <= chunk_end - chunk_pos {
+        prefilter
+            .prefix(input.chunk(), Span { start: input.chunk_pos(), end: input.get_chunk_end() })?
+    } else {
+        offset += chunk_pos;
+        let mut buf = Vec::with_capacity(prefilter.max_needle_len());
+        buf.extend_from_slice(&input.chunk()[chunk_pos..chunk_end]);
+        while input.advance() {
+            if input.chunk_offset() + input.chunk().len() < input.end() {
+                buf.extend_from_slice(input.chunk());
+            } else {
+                let chunk_end = input.end() - input.chunk_offset();
+                buf.extend_from_slice(&input.chunk()[..chunk_end]);
+                break;
+            }
+        }
+        prefilter.prefix(input.chunk(), Span { start: 0, end: buf.len() })?
+    };
+    res.start += offset;
+    res.end += offset;
+    Some(res)
+}
+
 fn find_1<C: Cursor>(prefilter: &Prefilter, input: &mut Input<C>) -> Option<Span> {
     debug_assert_eq!(prefilter.max_needle_len(), 1);
     let first_haystack = &input.chunk();

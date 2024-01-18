@@ -15,6 +15,7 @@ use crate::util::utf8::is_boundary;
 
 const MAX_CODEPOINT_LEN: usize = 4;
 
+#[derive(Clone)]
 pub struct Input<C: Cursor> {
     // span: Span,
     anchored: Anchored,

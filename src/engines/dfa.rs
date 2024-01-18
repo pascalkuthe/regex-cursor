@@ -6,6 +6,8 @@ use crate::cursor::Cursor;
 use crate::util::iter;
 use crate::Input;
 
+pub use crate::engines::dfa::search::{try_search_fwd, try_search_rev};
+
 mod accel;
 mod search;
 #[cfg(test)]
@@ -155,7 +157,7 @@ pub fn try_search<C: Cursor>(
     input: &mut Input<C>,
 ) -> Result<Option<Match>, MatchError> {
     let fwd = regex.forward();
-    let end = match search::try_search_fwd(fwd, input)? {
+    let end = match try_search_fwd(fwd, input)? {
         None => return Ok(None),
         Some(end) => end,
     };
@@ -194,7 +196,7 @@ pub fn try_search<C: Cursor>(
     let match_range = input.start()..end.offset();
     let start = input.with(|mut revsearch| {
         revsearch = revsearch.span(match_range).anchored(Anchored::Yes).earliest(false);
-        search::try_search_rev(regex.reverse(), revsearch)
+        try_search_rev(regex.reverse(), revsearch)
     });
     let start = start?.expect("reverse search must match if forward search does");
     debug_assert_eq!(
