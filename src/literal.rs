@@ -1,3 +1,4 @@
+use regex_automata::util::escape::DebugHaystack;
 pub use regex_automata::util::prefilter::Prefilter;
 pub use regex_automata::MatchKind;
 use regex_automata::Span;
@@ -25,7 +26,8 @@ pub fn prefix<C: Cursor>(prefilter: &Prefilter, input: &mut Input<C>) -> Option<
             .prefix(input.chunk(), Span { start: input.chunk_pos(), end: input.get_chunk_end() })?
     } else {
         offset += chunk_pos;
-        let mut buf = Vec::with_capacity(prefilter.max_needle_len());
+        let mut buf =
+            Vec::with_capacity(prefilter.max_needle_len().min(input.end() - input.start()));
         buf.extend_from_slice(&input.chunk()[chunk_pos..chunk_end]);
         while input.advance() && !buf.spare_capacity_mut().is_empty() {
             let mut chunk_len = input.chunk().len().min(buf.spare_capacity_mut().len());
@@ -82,17 +84,21 @@ fn find_n<C: Cursor>(prefilter: &Prefilter, input: &mut Input<C>) -> Option<Span
     #[cfg(debug_assertions)]
     let mut found_large_chunk = false;
 
-    while input.chunk_offset() + input.chunk().len() < input.end() {
-        #[cfg(debug_assertions)]
-        assert!(
-            buf.is_empty()
-                || (buf.len() < sliding_window && (buf.len() >= carry_over || !found_large_chunk)),
-            "{} {} {}",
-            buf.len(),
-            carry_over,
-            found_large_chunk
-        );
-        let carry_over_start = input.chunk().len() - carry_over.min(input.chunk().len());
+    loop {
+        let chunk_end = input.get_chunk_end();
+        let carry_over_start = if buf.is_empty() {
+            (chunk_end - carry_over.min(chunk_end)).max(input.chunk_pos())
+        } else {
+            #[cfg(debug_assertions)]
+            assert!(
+                buf.len() < sliding_window && (buf.len() >= carry_over || !found_large_chunk),
+                "{} {} {}",
+                buf.len(),
+                carry_over,
+                found_large_chunk
+            );
+            (chunk_end - sliding_window.min(chunk_end)).max(input.chunk_pos())
+        };
         buf.extend_from_slice(&input.chunk()[carry_over_start..]);
         if buf.len() >= sliding_window {
             if let Some(mut res) = prefilter.find(&buf, Span { start: 0, end: buf.len() }) {
@@ -107,7 +113,7 @@ fn find_n<C: Cursor>(prefilter: &Prefilter, input: &mut Input<C>) -> Option<Span
             head[..carry_over].copy_from_slice(tail);
             buf.truncate(carry_over);
         }
-        if !input.advance() {
+        if input.chunk_offset() + input.chunk().len() > input.end() || !input.advance() {
             break;
         }
         if input.get_chunk_end() + buf.len() < sliding_window {
@@ -149,9 +155,10 @@ fn find_n<C: Cursor>(prefilter: &Prefilter, input: &mut Input<C>) -> Option<Span
     }
     // this is a really weird edgecase where the total string is smaller than the
     // longest neeldle len but larger than the shortest needel
+    // we accumulated the **current** buffer (since advance failed/we hit the end condition)
     if !buf.is_empty() {
         if let Some(mut res) = prefilter.find(&buf, Span { start: 0, end: buf.len() }) {
-            let buf_offset = input.chunk_offset() - buf.len();
+            let buf_offset = input.chunk_offset() + input.get_chunk_end() - buf.len();
             res.start += buf_offset;
             res.end += buf_offset;
             return Some(res);
