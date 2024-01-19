@@ -13,7 +13,9 @@ regex-syntax = { version =  "0.8.2", path = "../regex/regex-syntax" }
 ropey = "1.6.0"
 
 [dev-dependencies]
+anyhow = "1.0.79"
 proptest = "1.2.0"
+regex-test = { version =  "0.1.0", path = "../regex/regex-test" }
 
 [features]
 default = ["perf-inline"]
