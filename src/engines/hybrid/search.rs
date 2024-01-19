@@ -597,7 +597,10 @@ fn find_fwd_imp<C: Cursor>(
                 if let Some(pre) = pre {
                     let old_pos = input.at();
                     match literal::find(pre, input) {
-                        None => return Ok(mat),
+                        None => {
+                            cache.search_finish(input.at());
+                            return Ok(mat);
+                        }
                         Some(ref span) => {
                             // We want to skip any update to 'at' below
                             // at the end of this iteration and just
