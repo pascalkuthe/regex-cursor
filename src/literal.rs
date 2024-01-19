@@ -27,16 +27,17 @@ pub fn prefix<C: Cursor>(prefilter: &Prefilter, input: &mut Input<C>) -> Option<
         offset += chunk_pos;
         let mut buf = Vec::with_capacity(prefilter.max_needle_len());
         buf.extend_from_slice(&input.chunk()[chunk_pos..chunk_end]);
-        while input.advance() {
-            if input.chunk_offset() + input.chunk().len() < input.end() {
-                buf.extend_from_slice(input.chunk());
+        while input.advance() && !buf.spare_capacity_mut().is_empty() {
+            let mut chunk_len = input.chunk().len().min(buf.spare_capacity_mut().len());
+            if input.chunk_offset() + chunk_len <= input.end() {
+                buf.extend_from_slice(&input.chunk()[..chunk_len]);
             } else {
-                let chunk_end = input.end() - input.chunk_offset();
-                buf.extend_from_slice(&input.chunk()[..chunk_end]);
+                chunk_len = input.end() - input.chunk_offset();
+                buf.extend_from_slice(&input.chunk()[..chunk_len]);
                 break;
             }
         }
-        prefilter.prefix(input.chunk(), Span { start: 0, end: buf.len() })?
+        prefilter.prefix(&buf, Span { start: 0, end: buf.len() })?
     };
     res.start += offset;
     res.end += offset;
