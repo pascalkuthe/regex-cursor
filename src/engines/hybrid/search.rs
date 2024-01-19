@@ -637,6 +637,7 @@ fn find_fwd_imp<C: Cursor>(
                 return Ok(mat);
             } else if sid.is_quit() {
                 cache.search_finish(input.at());
+                return Err(MatchError::quit(input.chunk()[input.chunk_pos], input.at()));
             } else {
                 debug_assert!(sid.is_unknown());
                 unreachable!("sid being unknown is a bug");
