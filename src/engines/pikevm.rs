@@ -387,10 +387,15 @@ fn search_imp<C: Cursor>(
             // ahead until we find something that we know might advance us
             // forward.
             if let Some(pre) = pre {
+                let chunk_offst = input.chunk_offset();
                 match literal::find(pre, input) {
                     None => break,
                     Some(ref span) => {
                         input.move_to(span.start);
+                        if chunk_offst != input.chunk_offset() {
+                            input.clear_look_behind();
+                            input.ensure_look_behind();
+                        }
                     }
                 }
             }
