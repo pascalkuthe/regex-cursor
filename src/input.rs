@@ -140,14 +140,8 @@ impl<C: Cursor> Input<C> {
         self.span.end
     }
 
-    #[cfg_attr(feature = "perf-inline", inline(always))]
+    #[inline(always)]
     pub fn get_chunk_end(&self) -> usize {
-        let end = self.span.end - self.chunk_offset();
-        end.min(self.chunk().len())
-    }
-
-    #[cfg_attr(feature = "perf-inline", inline(always))]
-    pub fn get_chunk_start(&self) -> usize {
         let end = self.span.end - self.chunk_offset();
         end.min(self.chunk().len())
     }

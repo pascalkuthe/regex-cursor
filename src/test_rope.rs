@@ -41,22 +41,22 @@ impl XorShift64Star {
     }
 }
 
-pub(crate) struct SegmentedSlice<'a> {
+pub(crate) struct RandomSlices<'a> {
     haystack: &'a [u8],
     pos: usize,
     size: usize,
     ran: XorShift64Star,
 }
 
-impl<'a> SegmentedSlice<'a> {
+impl<'a> RandomSlices<'a> {
     pub fn new(haystack: &'a [u8]) -> Self {
-        let mut res = SegmentedSlice { haystack, pos: 0, size: 0, ran: XorShift64Star::new() };
+        let mut res = RandomSlices { haystack, pos: 0, size: 0, ran: XorShift64Star::new() };
         res.advance();
         res
     }
 }
 
-impl Cursor for SegmentedSlice<'_> {
+impl Cursor for RandomSlices<'_> {
     fn chunk(&self) -> &[u8] {
         debug_assert_eq!(self.haystack.is_empty(), self.size == 0);
         &self.haystack[self.pos..self.pos + self.size]
@@ -107,6 +107,43 @@ impl Cursor for SegmentedSlice<'_> {
             }
             tries -= 1;
         }
+        true
+    }
+}
+
+pub(crate) struct DeterministicSlices<'a> {
+    haystacks: &'a [&'a [u8]],
+    pos: usize,
+}
+
+impl<'a> DeterministicSlices<'a> {
+    pub fn new(haystacks: &'a [&'a [u8]]) -> Self {
+        DeterministicSlices { haystacks, pos: 0 }
+    }
+}
+
+impl Cursor for DeterministicSlices<'_> {
+    fn chunk(&self) -> &[u8] {
+        self.haystacks[self.pos]
+    }
+
+    fn utf8_aware(&self) -> bool {
+        true
+    }
+
+    fn advance(&mut self) -> bool {
+        if self.pos + 1 >= self.haystacks.len() {
+            return false;
+        }
+        self.pos += 1;
+        true
+    }
+
+    fn backtrack(&mut self) -> bool {
+        if self.pos == 0 {
+            return false;
+        }
+        self.pos -= 1;
         true
     }
 }
