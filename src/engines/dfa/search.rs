@@ -481,6 +481,9 @@ fn find_fwd_imp<A: Automaton + ?Sized, C: Cursor>(
                                     sid = prefilter_restart(dfa, input)?;
                                 }
                                 continue;
+                            } else if input.at() != old_pos {
+                                // the prefilter may need to do some scan ahead
+                                input.move_to(old_pos);
                             }
                         }
                     }
