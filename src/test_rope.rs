@@ -5,8 +5,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use regex_automata::util::escape::DebugHaystack;
 
+use crate::util::utf8;
 use crate::Cursor;
 
+#[derive(Debug)]
 struct XorShift64Star {
     state: Cell<u64>,
 }
@@ -41,6 +43,7 @@ impl XorShift64Star {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct RandomSlices<'a> {
     haystack: &'a [u8],
     pos: usize,
@@ -75,7 +78,7 @@ impl Cursor for RandomSlices<'_> {
         loop {
             let next_size = self.ran.next_usize(250) + 1;
             let new_end = (new_start + next_size).min(self.haystack.len());
-            if crate::util::utf8::is_boundary(self.haystack, new_end) {
+            if utf8::is_boundary(self.haystack, new_end) {
                 self.pos = new_start;
                 self.size = new_end - new_start;
                 break;
@@ -97,7 +100,7 @@ impl Cursor for RandomSlices<'_> {
         loop {
             let next_size = self.ran.next_usize(250) + 1;
             let new_start = new_end.saturating_sub(next_size);
-            if crate::util::utf8::is_boundary(self.haystack, new_start) {
+            if utf8::is_boundary(self.haystack, new_start) {
                 self.pos = new_start;
                 self.size = new_end - new_start;
                 break;
@@ -111,6 +114,60 @@ impl Cursor for RandomSlices<'_> {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct SingleByteChunks<'a> {
+    haystack: &'a [u8],
+    pos: usize,
+    end: usize,
+}
+
+impl<'a> SingleByteChunks<'a> {
+    pub fn new(haystack: &'a [u8]) -> Self {
+        Self {
+            haystack,
+            pos: 0,
+            end: (1..haystack.len())
+                .find(|&i| utf8::is_boundary(haystack, i))
+                .unwrap_or(haystack.len()),
+        }
+    }
+}
+
+impl Cursor for SingleByteChunks<'_> {
+    fn chunk(&self) -> &[u8] {
+        debug_assert!(utf8::is_boundary(self.haystack, self.pos) || self.pos == 0);
+        debug_assert!(utf8::is_boundary(self.haystack, self.end) || self.end == 0);
+        &self.haystack[self.pos..self.end]
+    }
+
+    fn utf8_aware(&self) -> bool {
+        true
+    }
+
+    fn advance(&mut self) -> bool {
+        if self.end < self.haystack.len() {
+            self.pos = self.end;
+            self.end = (self.end + 1..self.haystack.len())
+                .find(|&i| utf8::is_boundary(self.haystack, i))
+                .unwrap_or(self.haystack.len());
+            true
+        } else {
+            false
+        }
+    }
+
+    fn backtrack(&mut self) -> bool {
+        if self.pos != 0 {
+            self.end = self.pos;
+            self.pos =
+                (0..self.pos).rev().find(|&i| utf8::is_boundary(self.haystack, i)).unwrap_or(0);
+            true
+        } else {
+            false
+        }
+    }
+}
+#[derive(Debug)]
 pub(crate) struct DeterministicSlices<'a> {
     haystacks: &'a [&'a [u8]],
     pos: usize,

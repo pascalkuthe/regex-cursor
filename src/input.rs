@@ -192,7 +192,7 @@ impl<C: Cursor> Input<C> {
         if advanced {
             self.chunk_offset += old_len;
             self.chunk_pos = 0;
-        } else {
+        } else if self.span.end > self.chunk_offset + old_len {
             self.span.end = self.chunk_offset + old_len;
         }
         advanced
