@@ -4,6 +4,7 @@ use regex_automata::util::syntax::Config;
 
 use crate::engines::pikevm::find_iter;
 use crate::input::Input;
+use crate::test_rope::SingleByteChunks;
 
 use super::Cache;
 
@@ -50,6 +51,21 @@ fn unicode_word_bounderies() {
     let iter2: Vec<_> = find_iter(&regex, &mut cache2, Input::new(foo.chunks())).collect();
     assert_eq!(iter1, iter2);
 }
+
+#[test]
+fn empty_no_overlap() {
+    let needle = r"(?m)(?:^|a)+";
+    let haystack: &[u8] = b"a\naaa\n";
+    let regex =
+        PikeVM::builder().syntax(Config::new().unicode(true).unicode(true)).build(needle).unwrap();
+    let mut cache1 = regex.create_cache();
+    let mut cache2 = Cache::new(&regex);
+    let iter1: Vec<_> = regex.find_iter(&mut cache1, haystack).collect();
+    let iter2: Vec<_> =
+        find_iter(&regex, &mut cache2, Input::new(SingleByteChunks::new(haystack))).collect();
+    assert_eq!(iter1, iter2);
+}
+
 #[test]
 fn maybe_empty() {
     let haystack = "x";
@@ -81,26 +97,24 @@ fn maybe_empty2() {
 proptest! {
   #[test]
   fn matches(haystack: String, needle: String) {
-    let foo = ropey::Rope::from_str(&haystack);
     let Ok(regex) = PikeVM::builder().syntax(Config::new().case_insensitive(true)).build(&needle) else {
         return Ok(())
     };
     let mut cache1 = regex.create_cache();
     let mut cache2 = Cache::new(&regex);
     let iter1: Vec<_> = regex.find_iter(&mut cache1, &haystack).collect();
-    let iter2: Vec<_> = find_iter(&regex, &mut cache2, Input::new(foo.chunks())).collect();
+    let iter2: Vec<_> = find_iter(&regex, &mut cache2, Input::new(SingleByteChunks::new(haystack.as_bytes()))).collect();
     prop_assert_eq!(iter1, iter2);
   }
   #[test]
   fn matches_word(haystack: String, needle in r"\\b\PC+\\b") {
-    let foo = ropey::Rope::from_str(&haystack);
     let Ok(regex) = PikeVM::builder().syntax(Config::new().case_insensitive(true)).build(&needle) else {
         return Ok(())
     };
     let mut cache1 = regex.create_cache();
     let mut cache2 = Cache::new(&regex);
     let iter1: Vec<_> = regex.find_iter(&mut cache1, &haystack).collect();
-    let iter2: Vec<_> = find_iter(&regex, &mut cache2, Input::new(foo.chunks())).collect();
+    let iter2: Vec<_> = find_iter(&regex, &mut cache2, Input::new(SingleByteChunks::new(haystack.as_bytes()))).collect();
     prop_assert_eq!(iter1, iter2);
   }
 }

@@ -226,6 +226,7 @@ impl<C: Cursor> Input<C> {
                 self.advance_with_look_behind();
                 Some(self.look_around[self.look_behind_len - 1])
             } else {
+                self.look_behind_len = 0;
                 None
             }
         } else {
