@@ -1,5 +1,5 @@
 use crate::{
-    test_rope::{DeterministicSlices, RandomSlices},
+    test_rope::{DeterministicSlices, RandomSlices, SingleByteChunks},
     Input,
 };
 
@@ -34,14 +34,14 @@ fn suite() -> anyhow::Result<regex_test::RegexTests> {
     load!("misc");
     load!("multiline");
     load!("no-unicode");
-    // load!("overlapping");
+    load!("overlapping");
     load!("regression");
     load!("set");
     load!("substring");
     load!("unicode");
-    // load!("utf8");
+    load!("utf8");
     load!("word-boundary");
-    // load!("word-boundary-special");
+    load!("word-boundary-special");
     load!("fowler/basic");
     load!("fowler/nullsubexpr");
     load!("fowler/repetition");
@@ -50,12 +50,12 @@ fn suite() -> anyhow::Result<regex_test::RegexTests> {
 }
 
 /// Configure a regex_automata::Input with the given test configuration.
-fn create_input(test: &regex_test::RegexTest) -> crate::Input<RandomSlices> {
+fn create_input(test: &regex_test::RegexTest) -> crate::Input<SingleByteChunks> {
     use regex_automata::Anchored;
 
     let bounds = test.bounds();
     let anchored = if test.anchored() { Anchored::Yes } else { Anchored::No };
-    let mut input = crate::Input::new(crate::test_rope::RandomSlices::new(test.haystack()))
+    let mut input = crate::Input::new(crate::test_rope::SingleByteChunks::new(test.haystack()))
         .range(bounds.start..bounds.end);
     input.anchored(anchored);
     input
@@ -88,7 +88,7 @@ const BLACKLIST: &[&str] = &[
     "earliest/",
 ];
 
-const RUNS: usize = 50;
+const RUNS: usize = 1;
 /// Tests the default configuration of the meta regex engine.
 #[test]
 fn default() -> Result<()> {
@@ -97,7 +97,7 @@ fn default() -> Result<()> {
     runner
         .expand(&["is_match", "find", "captures"], |test| test.compiles())
         .blacklist_iter(BLACKLIST);
-    for _ in 0..=RUNS {
+    for _ in 0..RUNS {
         runner.test_iter(suite()?.iter(), compiler(builder.clone()));
     }
     runner.assert();
@@ -135,7 +135,7 @@ fn no_dfa() -> Result<()> {
     runner
         .expand(&["is_match", "find", "captures"], |test| test.compiles())
         .blacklist_iter(BLACKLIST);
-    for _ in 0..=RUNS {
+    for _ in 0..RUNS {
         runner.test_iter(suite()?.iter(), compiler(builder.clone()));
     }
     runner.assert();
@@ -151,7 +151,7 @@ fn no_dfa_hybrid() -> Result<()> {
     runner
         .expand(&["is_match", "find", "captures"], |test| test.compiles())
         .blacklist_iter(BLACKLIST);
-    for _ in 0..=RUNS {
+    for _ in 0..RUNS {
         runner.test_iter(suite()?.iter(), compiler(builder.clone()));
     }
     runner.assert();
