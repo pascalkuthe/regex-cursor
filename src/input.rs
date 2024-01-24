@@ -212,8 +212,6 @@ impl<C: Cursor> Input<C> {
             self.chunk_pos = self.chunk().len();
         } else if self.chunk_offset != 0 {
             unreachable!("cursor does not support backtracking {}", self.chunk_offset)
-        } else {
-            self.chunk_pos = 0
         }
         backtracked
     }
