@@ -4,8 +4,7 @@ description = "regex fork that can search discontigous haystacks"
 version = "0.1.0"
 edition = "2021"
 autor = "Pascal Kuthe <pascalkuthe@pm.me>"
-documentation = "https://docs.rs/regex-automata"
-repository = "https://github.com/rust-lang/regex/tree/master/regex-automata"
+repository = "https://github.com/pascalkuthe/regex-cursor"
 readme = "README.md"
 keywords = ["regex", "dfa", "automata", "automaton", "nfa"]
 license = "MIT OR Apache-2.0"
@@ -17,14 +16,14 @@ rust-version = "1.65"
 [dependencies]
 log = "0.4.20"
 memchr = "2.6"
-regex-automata = { version =  "0.4.2", path = "../regex/regex-automata" }
-regex-syntax = { version =  "0.8.2", path = "../regex/regex-syntax" }
+regex-automata = { version = "0.4.2", git = "https://github.com/pascalkuthe/regex.git", branch = "prefilter" }
+regex-syntax = { version = "0.8.2", git = "https://github.com/pascalkuthe/regex.git", branch = "prefilter" }
 ropey = { version = "1.6.0", optional = true }
 
 [dev-dependencies]
 anyhow = "1.0.79"
 proptest = "1.2.0"
-regex-test = { version =  "0.1.0", path = "../regex/regex-test" }
+regex-test = { version = "0.1.0", git = "https://github.com/pascalkuthe/regex.git", branch = "prefilter" }
 
 [features]
 default = ["perf-inline", "ropey"]
