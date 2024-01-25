@@ -321,6 +321,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex-cursor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "memchr",
+ "proptest",
+ "regex-automata",
+ "regex-syntax 0.8.2",
+ "regex-test",
+ "ropey",
+]
+
+[[package]]
 name = "regex-syntax"
 version = "0.6.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -348,20 +362,6 @@ checksum = "53ce7a2c43a32e50d666e33c5a80251b31147bb4b49024bcab11fb6f20c671ed"
 dependencies = [
  "smallvec",
  "str_indices",
-]
-
-[[package]]
-name = "ropey_regex"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "log",
- "memchr",
- "proptest",
- "regex-automata",
- "regex-syntax 0.8.2",
- "regex-test",
- "ropey",
 ]
 
 [[package]]

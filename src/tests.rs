@@ -1,5 +1,5 @@
 use crate::{
-    test_rope::{DeterministicSlices, RandomSlices, SingleByteChunks},
+    test_rope::{DeterministicSlices, SingleByteChunks},
     Input,
 };
 

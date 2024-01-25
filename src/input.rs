@@ -43,6 +43,8 @@ impl<C: Cursor> Input<C> {
     /// from its current position
     #[inline]
     pub fn new_at<T: IntoCursor<Cursor = C>>(cursor: T, offset: usize) -> Self {
+        let cursor = cursor.into_cursor();
+        let end = cursor.total_bytes();
         Input {
             anchored: Anchored::No,
             earliest: false,
@@ -53,7 +55,7 @@ impl<C: Cursor> Input<C> {
             // which of these have been filed since we only look
             // behind more than one byte in utf8 mode
             look_around: [255; 8],
-            span: Span { start: offset, end: usize::MAX },
+            span: Span { start: offset, end: end.unwrap_or(usize::MAX) },
             look_behind_len: 0,
         }
     }

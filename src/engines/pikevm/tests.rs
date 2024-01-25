@@ -1,4 +1,4 @@
-use std::ops::{Range, RangeBounds};
+use std::ops::RangeBounds;
 
 use proptest::{prop_assert_eq, proptest};
 use regex_automata::nfa::thompson::pikevm::PikeVM;
@@ -40,7 +40,7 @@ fn smoke_test() {
         PikeVM::builder().syntax(SyntaxConfig::new().case_insensitive(true)).build("vec").unwrap();
     let mut cache = Cache::new(&regex);
     let rope = ropey::Rope::from_str(&text);
-    let matches: Vec<_> = find_iter(&regex, &mut cache, Input::new(rope.chunks()))
+    let matches: Vec<_> = find_iter(&regex, &mut cache, Input::new(&rope))
         .map(|range| rope.byte_slice(range.range()))
         .collect();
     println!("found {matches:#?} in syntax.rs");

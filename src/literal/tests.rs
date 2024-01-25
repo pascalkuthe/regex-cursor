@@ -19,7 +19,7 @@ proptest! {
             Some(res)
         }).collect();
         let rope = ropey::Rope::from_str(&haystack);
-        let mut input = crate::Input::new(rope.chunks());
+        let mut input = crate::Input::new(&rope);
         let iter2: Vec<_> = iter::from_fn(||{
             let res = super::find(&prefilter, &mut input)?;
             input.move_to(res.end);

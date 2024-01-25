@@ -11,6 +11,37 @@ impl<C: Cursor> IntoCursor for C {
     }
 }
 
+/// A cursor that allows transevrsting a non-contigous byte haystack like a rope.
+pub trait Cursor {
+    /// Returns the current chunk. If utf8_aware returns true then this function
+    /// must **never** return a chunk that splits a unicode codepoint.
+    /// See [`utf8_aware`] for details.
+    fn chunk(&self) -> &[u8];
+    /// Whether this cursor is aware of utf-8 codepoint boundaries.
+    ///
+    /// **`true`** means that his cursor must never slpit a unicode codepoint at a
+    ///  chunk boundary. In that case all regex features are supported.
+    ///
+    /// **`false`** means that his cursor can not be used for utf-8 mode
+    /// matching (only affects empty strings) and can not be used to match
+    /// unicode word boundaries.
+    fn utf8_aware(&self) -> bool {
+        true
+    }
+    /// Advances the cursor to the next chunk if possible. In that case `true`
+    /// must be returned If the end of data is reached this function should
+    /// return `false` and **not change the chunk**
+    fn advance(&mut self) -> bool;
+    /// Moves the cursor to the previous chunk if possible. In that case `true`
+    /// must be returned If the start of data is reached this function should
+    /// return `false` and **not change the chunk**
+    fn backtrack(&mut self) -> bool;
+    /// Returns the total length of the data. This does not
+    /// take the current cursor position into account and should
+    /// not change with calls to [`advance`] and [`backtrack`].
+    fn total_bytes(&self) -> Option<usize>;
+}
+
 impl<C: Cursor> Cursor for &mut C {
     fn chunk(&self) -> &[u8] {
         C::chunk(self)
@@ -27,24 +58,10 @@ impl<C: Cursor> Cursor for &mut C {
     fn backtrack(&mut self) -> bool {
         C::backtrack(self)
     }
-}
 
-impl<'h> IntoCursor for ropey::iter::Chunks<'h> {
-    type Cursor = RopeyCursor<'h>;
-
-    fn into_cursor(self) -> Self::Cursor {
-        RopeyCursor::new(self)
+    fn total_bytes(&self) -> Option<usize> {
+        C::total_bytes(self)
     }
-}
-
-pub trait Cursor {
-    fn chunk(&self) -> &[u8];
-    /// Whether this cursor can be used for unicode/utf8 mode matching That
-    /// means specifically that it promises that unicode codepoints are never
-    /// split across chunk boundaries
-    fn utf8_aware(&self) -> bool;
-    fn advance(&mut self) -> bool;
-    fn backtrack(&mut self) -> bool;
 }
 
 impl Cursor for &[u8] {
@@ -63,6 +80,10 @@ impl Cursor for &[u8] {
 
     fn backtrack(&mut self) -> bool {
         false
+    }
+
+    fn total_bytes(&self) -> Option<usize> {
+        Some(self.len())
     }
 }
 
@@ -83,87 +104,60 @@ impl Cursor for &str {
     fn backtrack(&mut self) -> bool {
         false
     }
-}
-
-pub struct Bytes<'a, I> {
-    iter: I,
-    current: &'a [u8],
-}
-
-impl<'a, I: Iterator<Item = &'a [u8]>> Cursor for Bytes<'a, I> {
-    fn chunk(&self) -> &[u8] {
-        self.current
-    }
-
-    fn advance(&mut self) -> bool {
-        for next in self.iter.by_ref() {
-            if next.is_empty() {
-                continue;
-            }
-            self.current = next;
-            return true;
-        }
-        false
-    }
-
-    fn backtrack(&mut self) -> bool {
-        false
-    }
-
-    fn utf8_aware(&self) -> bool {
-        false
+    fn total_bytes(&self) -> Option<usize> {
+        Some(<str>::len(self))
     }
 }
 
-pub struct Utf8Bytes<'a, I> {
-    iter: I,
-    current: &'a [u8],
-}
-
-impl<'a, I: Iterator<Item = &'a str>> Cursor for Utf8Bytes<'a, I> {
-    fn chunk(&self) -> &[u8] {
-        self.current
-    }
-
-    fn advance(&mut self) -> bool {
-        for next in self.iter.by_ref() {
-            if next.is_empty() {
-                continue;
-            }
-            self.current = next.as_bytes();
-            return true;
-        }
-        false
-    }
-
-    fn backtrack(&mut self) -> bool {
-        false
-    }
-
-    fn utf8_aware(&self) -> bool {
-        true
-    }
-}
-
+#[cfg(feature = "ropey")]
 #[derive(Clone, Copy)]
 enum Pos {
     ChunkStart,
     ChunkEnd,
 }
 
+#[cfg(feature = "ropey")]
 #[derive(Clone)]
 pub struct RopeyCursor<'a> {
     iter: ropey::iter::Chunks<'a>,
     current: &'a [u8],
     pos: Pos,
+    len: usize,
 }
 
+#[cfg(feature = "ropey")]
 impl<'a> RopeyCursor<'a> {
-    pub fn new(mut iter: ropey::iter::Chunks<'a>) -> Self {
-        Self { current: iter.next().unwrap_or_default().as_bytes(), iter, pos: Pos::ChunkEnd }
+    pub fn new(slice: ropey::RopeSlice<'a>) -> Self {
+        let mut iter = slice.chunks();
+        Self {
+            current: iter.next().unwrap_or_default().as_bytes(),
+            iter,
+            pos: Pos::ChunkEnd,
+            len: slice.len_bytes(),
+        }
+    }
+    pub fn at_char(slice: ropey::RopeSlice<'a>, at: usize) -> Self {
+        let (mut iter, _, _, _) = slice.chunks_at_char(at);
+        Self {
+            current: iter.next().unwrap_or_default().as_bytes(),
+            iter,
+            pos: Pos::ChunkEnd,
+            len: slice.len_bytes(),
+        }
+    }
+
+    pub fn at_byte(slice: ropey::RopeSlice<'a>, at: usize) -> Self {
+        let (mut iter, _, _, _) = slice.chunks_at_char(at);
+        Self {
+            current: iter.next().unwrap_or_default().as_bytes(),
+            iter,
+            pos: Pos::ChunkEnd,
+            len: slice.len_bytes(),
+        }
     }
 }
 
+#[cfg(feature = "ropey")]
 impl Cursor for RopeyCursor<'_> {
     fn chunk(&self) -> &[u8] {
         self.current
@@ -207,5 +201,27 @@ impl Cursor for RopeyCursor<'_> {
 
     fn utf8_aware(&self) -> bool {
         true
+    }
+
+    fn total_bytes(&self) -> Option<usize> {
+        Some(self.len)
+    }
+}
+
+#[cfg(feature = "ropey")]
+impl<'a> IntoCursor for ropey::RopeSlice<'a> {
+    type Cursor = RopeyCursor<'a>;
+
+    fn into_cursor(self) -> Self::Cursor {
+        RopeyCursor::new(self)
+    }
+}
+
+#[cfg(feature = "ropey")]
+impl<'a> IntoCursor for &'a ropey::Rope {
+    type Cursor = RopeyCursor<'a>;
+
+    fn into_cursor(self) -> Self::Cursor {
+        RopeyCursor::new(self.slice(..))
     }
 }

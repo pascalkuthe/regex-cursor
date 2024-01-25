@@ -112,6 +112,10 @@ impl Cursor for RandomSlices<'_> {
         }
         true
     }
+
+    fn total_bytes(&self) -> Option<usize> {
+        Some(self.haystack.len())
+    }
 }
 
 #[derive(Debug)]
@@ -166,7 +170,12 @@ impl Cursor for SingleByteChunks<'_> {
             false
         }
     }
+
+    fn total_bytes(&self) -> Option<usize> {
+        Some(self.haystack.len())
+    }
 }
+
 #[derive(Debug)]
 pub(crate) struct DeterministicSlices<'a> {
     haystacks: &'a [&'a [u8]],
@@ -202,5 +211,9 @@ impl Cursor for DeterministicSlices<'_> {
         }
         self.pos -= 1;
         true
+    }
+
+    fn total_bytes(&self) -> Option<usize> {
+        Some(self.haystacks.iter().map(|b| b.len()).sum())
     }
 }

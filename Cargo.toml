@@ -1,7 +1,16 @@
 [package]
-name = "ropey_regex"
+name = "regex-cursor"
+description = "regex fork that can search discontigous haystacks"
 version = "0.1.0"
 edition = "2021"
+autor = "Pascal Kuthe <pascalkuthe@pm.me>"
+documentation = "https://docs.rs/regex-automata"
+repository = "https://github.com/rust-lang/regex/tree/master/regex-automata"
+readme = "README.md"
+keywords = ["regex", "dfa", "automata", "automaton", "nfa"]
+license = "MIT OR Apache-2.0"
+categories = ["text-processing"]
+rust-version = "1.65"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -10,7 +19,7 @@ log = "0.4.20"
 memchr = "2.6"
 regex-automata = { version =  "0.4.2", path = "../regex/regex-automata" }
 regex-syntax = { version =  "0.8.2", path = "../regex/regex-syntax" }
-ropey = "1.6.0"
+ropey = { version = "1.6.0", optional = true }
 
 [dev-dependencies]
 anyhow = "1.0.79"
@@ -18,5 +27,6 @@ proptest = "1.2.0"
 regex-test = { version =  "0.1.0", path = "../regex/regex-test" }
 
 [features]
-default = ["perf-inline"]
+default = ["perf-inline", "ropey"]
 perf-inline = []
+ropey = ["dep:ropey"]
