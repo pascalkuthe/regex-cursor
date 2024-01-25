@@ -11,11 +11,13 @@ impl<C: Cursor> IntoCursor for C {
     }
 }
 
-/// A cursor that allows transevrsting a non-contigous byte haystack like a rope.
+/// A cursor that allows transeversing a discontigous string like a rope.
 pub trait Cursor {
     /// Returns the current chunk. If utf8_aware returns true then this function
     /// must **never** return a chunk that splits a unicode codepoint.
     /// See [`utf8_aware`] for details.
+    ///
+    /// Must never return an empty byteslice unless the underlying collection is empty.
     fn chunk(&self) -> &[u8];
     /// Whether this cursor is aware of utf-8 codepoint boundaries.
     ///
