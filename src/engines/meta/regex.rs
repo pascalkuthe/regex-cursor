@@ -22,7 +22,7 @@ use regex_syntax::{
 
 use crate::{
     cursor::Cursor,
-    meta::{error::BuildError, strategy::Strategy, wrappers},
+    engines::meta::{error::BuildError, strategy::Strategy, wrappers},
     util::iter,
     Input,
 };

@@ -7,7 +7,7 @@ use regex_syntax::hir::{literal, Hir};
 
 use crate::{
     cursor::Cursor,
-    meta::{
+    engines::meta::{
         error::{BuildError, RetryFailError},
         regex::{Cache, RegexInfo},
         wrappers,
@@ -400,7 +400,7 @@ impl Pre {
     /// them are alternation of literals, but I haven't had the time to go down
     /// that path yet.
     fn from_alternation_literals(info: &RegexInfo, hirs: &[&Hir]) -> Option<Pre> {
-        let lits = crate::meta::literal::alternation_literals(info, hirs)?;
+        let lits = crate::engines::meta::literal::alternation_literals(info, hirs)?;
         let ac = Prefilter::new(MatchKind::LeftmostFirst, &lits)?;
         // let ac = AhoCorasick::new(MatchKind::LeftmostFirst, &lits)?;
         Some(Pre::new(ac))

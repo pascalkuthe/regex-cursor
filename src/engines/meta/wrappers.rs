@@ -31,9 +31,9 @@ use regex_automata::util::primitives::NonMaxUsize;
 use regex_automata::{dfa, hybrid, HalfMatch, Match, MatchKind, PatternID};
 
 use crate::cursor::Cursor;
+use crate::engines::meta::error::{BuildError, RetryFailError};
+use crate::engines::meta::regex::RegexInfo;
 use crate::engines::pikevm;
-use crate::meta::error::{BuildError, RetryFailError};
-use crate::meta::regex::RegexInfo;
 use crate::Input;
 
 #[derive(Debug)]

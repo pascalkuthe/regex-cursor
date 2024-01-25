@@ -4,7 +4,7 @@ use crate::{
 };
 
 use {
-    crate::meta::{self, Regex},
+    crate::engines::meta::{self, Regex},
     anyhow::Result,
     regex_automata::util::syntax,
     regex_automata::MatchKind,

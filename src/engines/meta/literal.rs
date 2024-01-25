@@ -4,7 +4,7 @@ use log::debug;
 use regex_automata::MatchKind;
 use regex_syntax::hir::Hir;
 
-use crate::meta::regex::RegexInfo;
+use crate::engines::meta::regex::RegexInfo;
 
 /// Pull out an alternation of literals from the given sequence of HIR
 /// expressions.
