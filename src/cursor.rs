@@ -42,6 +42,8 @@ pub trait Cursor {
     /// take the current cursor position into account and should
     /// not change with calls to [`advance`] and [`backtrack`].
     fn total_bytes(&self) -> Option<usize>;
+    /// The offset of the current chunk from the start of the haystack in bytes
+    fn offset(&self) -> usize;
 }
 
 impl<C: Cursor> Cursor for &mut C {
@@ -63,6 +65,10 @@ impl<C: Cursor> Cursor for &mut C {
 
     fn total_bytes(&self) -> Option<usize> {
         C::total_bytes(self)
+    }
+
+    fn offset(&self) -> usize {
+        C::offset(self)
     }
 }
 
@@ -87,6 +93,9 @@ impl Cursor for &[u8] {
     fn total_bytes(&self) -> Option<usize> {
         Some(self.len())
     }
+    fn offset(&self) -> usize {
+        0
+    }
 }
 
 impl Cursor for &str {
@@ -109,6 +118,10 @@ impl Cursor for &str {
     fn total_bytes(&self) -> Option<usize> {
         Some(<str>::len(self))
     }
+
+    fn offset(&self) -> usize {
+        0
+    }
 }
 
 #[cfg(feature = "ropey")]
@@ -125,37 +138,25 @@ pub struct RopeyCursor<'a> {
     current: &'a [u8],
     pos: Pos,
     len: usize,
+    offset: usize,
 }
 
 #[cfg(feature = "ropey")]
 impl<'a> RopeyCursor<'a> {
     pub fn new(slice: ropey::RopeSlice<'a>) -> Self {
-        let mut iter = slice.chunks();
-        Self {
-            current: iter.next().unwrap_or_default().as_bytes(),
-            iter,
-            pos: Pos::ChunkEnd,
-            len: slice.len_bytes(),
-        }
-    }
-    pub fn at_char(slice: ropey::RopeSlice<'a>, at: usize) -> Self {
-        let (mut iter, _, _, _) = slice.chunks_at_char(at);
-        Self {
-            current: iter.next().unwrap_or_default().as_bytes(),
-            iter,
-            pos: Pos::ChunkEnd,
-            len: slice.len_bytes(),
-        }
+        let iter = slice.chunks();
+        let mut res =
+            Self { current: &[], iter, pos: Pos::ChunkEnd, len: slice.len_bytes(), offset: 0 };
+        res.advance();
+        res
     }
 
-    pub fn at_byte(slice: ropey::RopeSlice<'a>, at: usize) -> Self {
-        let (mut iter, _, _, _) = slice.chunks_at_char(at);
-        Self {
-            current: iter.next().unwrap_or_default().as_bytes(),
-            iter,
-            pos: Pos::ChunkEnd,
-            len: slice.len_bytes(),
-        }
+    pub fn at(slice: ropey::RopeSlice<'a>, at: usize) -> Self {
+        let (iter, offset, _, _) = slice.chunks_at_char(at);
+        let mut res =
+            Self { current: &[], iter, pos: Pos::ChunkEnd, len: slice.len_bytes(), offset };
+        res.advance();
+        res
     }
 }
 
@@ -177,6 +178,7 @@ impl Cursor for RopeyCursor<'_> {
             if next.is_empty() {
                 continue;
             }
+            self.offset += self.current.len();
             self.current = next.as_bytes();
             return true;
         }
@@ -195,6 +197,7 @@ impl Cursor for RopeyCursor<'_> {
             if prev.is_empty() {
                 continue;
             }
+            self.offset -= prev.len();
             self.current = prev.as_bytes();
             return true;
         }
@@ -207,6 +210,10 @@ impl Cursor for RopeyCursor<'_> {
 
     fn total_bytes(&self) -> Option<usize> {
         Some(self.len)
+    }
+
+    fn offset(&self) -> usize {
+        self.offset
     }
 }
 
@@ -225,5 +232,42 @@ impl<'a> IntoCursor for &'a ropey::Rope {
 
     fn into_cursor(self) -> Self::Cursor {
         RopeyCursor::new(self.slice(..))
+    }
+}
+#[cfg(all(feature = "ropey", test))]
+mod ropey_test {
+    use ropey::Rope;
+
+    use crate::cursor::IntoCursor;
+    use crate::Cursor;
+
+    #[test]
+    fn smoke_test() {
+        let rope = Rope::from_str("abc");
+        let mut cursor = rope.into_cursor();
+        assert_eq!(cursor.chunk(), "abc".as_bytes());
+        assert!(!cursor.advance());
+        assert_eq!(cursor.chunk(), "abc".as_bytes());
+        assert!(!cursor.backtrack());
+        assert_eq!(cursor.chunk(), "abc".as_bytes());
+        let rope = Rope::from("abc".repeat(5000));
+        let mut cursor = rope.into_cursor();
+        let mut offset = 0;
+        loop {
+            assert_eq!(cursor.offset(), offset);
+            offset += cursor.chunk().len();
+            if !cursor.advance() {
+                break;
+            }
+        }
+        loop {
+            offset -= cursor.chunk().len();
+            assert_eq!(cursor.offset(), offset);
+            if !cursor.backtrack() {
+                break;
+            }
+        }
+        assert_eq!(cursor.offset(), 0);
+        assert_eq!(offset, 0);
     }
 }

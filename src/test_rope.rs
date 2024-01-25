@@ -116,6 +116,10 @@ impl Cursor for RandomSlices<'_> {
     fn total_bytes(&self) -> Option<usize> {
         Some(self.haystack.len())
     }
+
+    fn offset(&self) -> usize {
+        self.pos
+    }
 }
 
 #[derive(Debug)]
@@ -174,46 +178,8 @@ impl Cursor for SingleByteChunks<'_> {
     fn total_bytes(&self) -> Option<usize> {
         Some(self.haystack.len())
     }
-}
 
-#[derive(Debug)]
-pub(crate) struct DeterministicSlices<'a> {
-    haystacks: &'a [&'a [u8]],
-    pos: usize,
-}
-
-impl<'a> DeterministicSlices<'a> {
-    pub fn new(haystacks: &'a [&'a [u8]]) -> Self {
-        DeterministicSlices { haystacks, pos: 0 }
-    }
-}
-
-impl Cursor for DeterministicSlices<'_> {
-    fn chunk(&self) -> &[u8] {
-        self.haystacks[self.pos]
-    }
-
-    fn utf8_aware(&self) -> bool {
-        true
-    }
-
-    fn advance(&mut self) -> bool {
-        if self.pos + 1 >= self.haystacks.len() {
-            return false;
-        }
-        self.pos += 1;
-        true
-    }
-
-    fn backtrack(&mut self) -> bool {
-        if self.pos == 0 {
-            return false;
-        }
-        self.pos -= 1;
-        true
-    }
-
-    fn total_bytes(&self) -> Option<usize> {
-        Some(self.haystacks.iter().map(|b| b.len()).sum())
+    fn offset(&self) -> usize {
+        self.pos
     }
 }

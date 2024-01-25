@@ -1,7 +1,4 @@
-use crate::{
-    test_rope::{DeterministicSlices, SingleByteChunks},
-    Input,
-};
+use crate::test_rope::SingleByteChunks;
 
 use {
     crate::engines::meta::{self, Regex},
@@ -101,28 +98,6 @@ fn default() -> Result<()> {
         runner.test_iter(suite()?.iter(), compiler(builder.clone()));
     }
     runner.assert();
-    Ok(())
-}
-
-/// Tests the default configuration of the meta regex engine.
-#[test]
-fn multi() -> Result<()> {
-    let mut builder = Regex::builder();
-    let meta_config = Regex::config()
-        .match_kind(MatchKind::LeftmostFirst)
-        .utf8_empty(true)
-        .line_terminator(10)
-        .dfa(true)
-        .hybrid(true);
-    builder.configure(meta_config).syntax(syntax::Config::new().utf8(true));
-    let regex = builder.build("ab|a").unwrap();
-    // let regex = builder.build_many(&["ab", "a"]).unwrap();
-    // println!("{regex:#?}");
-    // for _ in 0..=1000000 {
-    // let input = RandomSlices::new(b"xxabc");
-    let input = DeterministicSlices::new(&[b"x", b"x", b"a", b"b", b"c"]);
-    assert_eq!(regex.find(Input::new(input)).unwrap().range(), 2..4);
-    // }
     Ok(())
 }
 

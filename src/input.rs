@@ -20,8 +20,6 @@ pub struct Input<C: Cursor> {
     // span: Span,
     anchored: Anchored,
     earliest: bool,
-    /// Offset of the current chunk from the start of the stream
-    chunk_offset: usize,
     /// Position within the current chunk
     pub(crate) chunk_pos: usize,
     span: Span,
@@ -35,27 +33,19 @@ impl<C: Cursor> Input<C> {
     /// Create a new search configuration for the given cursor.
     #[inline]
     pub fn new<T: IntoCursor<Cursor = C>>(cursor: T) -> Self {
-        Input::new_at(cursor, 0)
-    }
-
-    /// Create a new search configuration for the given cursor.
-    /// The `offset` indicates how  many bytes the cursor can backtrack
-    /// from its current position
-    #[inline]
-    pub fn new_at<T: IntoCursor<Cursor = C>>(cursor: T, offset: usize) -> Self {
         let cursor = cursor.into_cursor();
-        let end = cursor.total_bytes();
+        let end = cursor.total_bytes().unwrap_or(usize::MAX);
+        let start = cursor.offset();
         Input {
             anchored: Anchored::No,
             earliest: false,
-            chunk_offset: offset,
             chunk_pos: 0,
             cursor: cursor.into_cursor(),
             // init with invalid utf8. We don't need to track
             // which of these have been filed since we only look
             // behind more than one byte in utf8 mode
             look_around: [255; 8],
-            span: Span { start: offset, end: end.unwrap_or(usize::MAX) },
+            span: Span { start, end },
             look_behind_len: 0,
         }
     }
@@ -87,7 +77,7 @@ impl<C: Cursor> Input<C> {
     /// ```
     #[cfg_attr(feature = "perf-inline", inline(always))]
     pub fn chunk_offset(&self) -> usize {
-        self.chunk_offset
+        self.cursor.offset()
     }
 
     /// Return the start position of this search.
@@ -144,7 +134,7 @@ impl<C: Cursor> Input<C> {
 
     #[inline(always)]
     pub fn get_chunk_end(&self) -> usize {
-        let end = self.span.end - self.chunk_offset();
+        let end = self.span.end - self.cursor.offset();
         end.min(self.chunk().len())
     }
 
@@ -192,10 +182,9 @@ impl<C: Cursor> Input<C> {
         let old_len = self.cursor.chunk().len();
         let advanced = self.cursor.advance();
         if advanced {
-            self.chunk_offset += old_len;
             self.chunk_pos = 0;
-        } else if self.span.end > self.chunk_offset + old_len {
-            self.span.end = self.chunk_offset + old_len;
+        } else if self.span.end > self.cursor.offset() + old_len {
+            self.span.end = self.cursor.offset() + old_len;
         }
         advanced
     }
@@ -210,10 +199,9 @@ impl<C: Cursor> Input<C> {
     pub(crate) fn backtrack(&mut self) -> bool {
         let backtracked = self.cursor.backtrack();
         if backtracked {
-            self.chunk_offset -= self.chunk().len();
             self.chunk_pos = self.chunk().len();
-        } else if self.chunk_offset != 0 {
-            unreachable!("cursor does not support backtracking {}", self.chunk_offset)
+        } else if self.cursor.offset() != 0 {
+            unreachable!("cursor does not support backtracking {}", self.cursor.offset())
         }
         backtracked
     }
@@ -653,25 +641,25 @@ impl<C: Cursor> Input<C> {
     #[inline]
     pub(crate) fn move_to(&mut self, at: usize) {
         // TODO: fastpath for O(log N) chunk jumping
-        while at < self.chunk_offset {
+        while at < self.cursor.offset() {
             self.backtrack();
         }
-        if at != self.chunk_offset {
-            while at >= self.chunk_offset + self.chunk().len() {
+        if at != self.cursor.offset() {
+            while at >= self.cursor.offset() + self.chunk().len() {
                 let advanced = self.advance();
                 if !advanced {
-                    let chunk_pos = (at - self.chunk_offset).min(self.chunk().len());
+                    let chunk_pos = (at - self.cursor.offset()).min(self.chunk().len());
                     self.set_chunk_pos(chunk_pos);
                     return;
                 }
             }
         }
-        self.set_chunk_pos(at - self.chunk_offset());
+        self.set_chunk_pos(at - self.cursor.offset());
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
     pub(crate) fn at(&self) -> usize {
-        self.chunk_offset() + self.chunk_pos()
+        self.cursor.offset() + self.chunk_pos()
     }
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
@@ -847,7 +835,7 @@ impl<C: Cursor> core::fmt::Debug for Input<C> {
             .field("anchored", &self.anchored)
             .field("earliest", &self.earliest)
             .field("chunk_pos", &self.chunk_pos)
-            .field("chunk_offset", &self.chunk_offset)
+            .field("chunk_offset", &self.cursor.offset())
             .field("span", &self.span)
             .finish()
     }
