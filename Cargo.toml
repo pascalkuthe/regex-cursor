@@ -1,10 +1,10 @@
 [package]
 name = "regex-cursor"
-description = "regex fork that can search discontigous haystacks"
+description = "regex fork that can search discontiguous haystacks"
 version = "0.1.1"
 edition = "2021"
 documentation = "https://docs.rs/regex-cursor"
-autor = "Pascal Kuthe <pascalkuthe@pm.me>"
+author = "Pascal Kuthe <pascalkuthe@pm.me>"
 repository = "https://github.com/pascalkuthe/regex-cursor"
 readme = "README.md"
 keywords = ["regex", "dfa", "automata", "automaton", "nfa"]

@@ -1,5 +1,5 @@
 /*!
-This crate provides routines for searching **discontigous strings** for matches
+This crate provides routines for searching **discontiguous strings** for matches
 of a regular expression (aka "regex"). It is based on regex-automata and
 most of the code is adapted from the various crates in the
 [regex](https://github.com/rust-lang/regex) repository.
@@ -23,12 +23,12 @@ pub trait Cursor {
 }
 ```
 
- Working on this crate showed met hat regex backtracks a lot more than expected
+Working on this crate showed met hat regex backtracks a lot more than expected
 with most functionality fundamentally requiring backtracking. For network
-usecase that do not buffer their input the primary usecase would likely be
-detecting a match (without neccesiarily requireing the matched byte range).
+usecases that do not buffer their input the primary usecase would likely be
+detecting a match (without necessarily requiring the matched byte range).
 Such usecases can be covered by manually feeding bytes into the hybrid and DFA
-engines from the regex-automata crate. These approache also has the advantage
+engines from the regex-automata crate. This approach also has the advantage
 of allowing the caller to pause the match (async) while waiting for more data
 allowing the caller to drive the search instead of the engine itself.
 
