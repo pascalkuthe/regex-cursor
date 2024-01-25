@@ -12,7 +12,7 @@ collections can implement.
 A sketch of the cursor API is shown below. The string is yielded in multiple
 byte chunks. Calling advance moves the cursor to the next chunk. Calling
 backtrack moves the cursor a chunk back. Backtracking is required by this
-create. That makes it unsuitable for searching fully unbuffered streams like
+crate. That makes it unsuitable for searching fully unbuffered streams like
 bytes send over a TCP connection.
 
 ```rust_ignore
@@ -23,7 +23,7 @@ pub trait Cursor {
 }
 ```
 
-Working on this crate showed met hat regex backtracks a lot more than expected
+Working on this crate showed me that regex backtracks a lot more than expected
 with most functionality fundamentally requiring backtracking. For network
 usecases that do not buffer their input the primary usecase would likely be
 detecting a match (without necessarily requiring the matched byte range).
