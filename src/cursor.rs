@@ -11,7 +11,7 @@ impl<C: Cursor> IntoCursor for C {
     }
 }
 
-/// A cursor that allows transeversing a discontigous string like a rope.
+/// A cursor that allows traversing a discontiguous string like a rope.
 pub trait Cursor {
     /// Returns the current chunk. If [`utf8_aware`](Cursor::utf8_aware) returns true then this function
     /// must **never** return a chunk that splits a unicode codepoint.
@@ -21,8 +21,8 @@ pub trait Cursor {
     fn chunk(&self) -> &[u8];
     /// Whether this cursor is aware of utf-8 codepoint boundaries.
     ///
-    /// **`true`** means that his cursor must never slpit a unicode codepoint at a
-    ///  chunk boundary. In that case all regex features are supported.
+    /// **`true`** means that his cursor must never split a unicode codepoint at a
+    /// chunk boundary. In that case all regex features are supported.
     ///
     /// **`false`** means that his cursor can not be used for utf-8 mode
     /// matching (only affects empty strings) and can not be used to match
@@ -31,7 +31,7 @@ pub trait Cursor {
         true
     }
     /// Advances the cursor to the next chunk if possible. In that case `true`
-    /// must be returned If the end of data is reached this function should
+    /// must be returned. If the end of data is reached this function should
     /// return `false` and **not change the chunk**
     fn advance(&mut self) -> bool;
     /// Moves the cursor to the previous chunk if possible. In that case `true`
