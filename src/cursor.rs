@@ -13,9 +13,9 @@ impl<C: Cursor> IntoCursor for C {
 
 /// A cursor that allows transeversing a discontigous string like a rope.
 pub trait Cursor {
-    /// Returns the current chunk. If utf8_aware returns true then this function
+    /// Returns the current chunk. If [`utf8_aware`](Cursor::utf8_aware) returns true then this function
     /// must **never** return a chunk that splits a unicode codepoint.
-    /// See [`utf8_aware`] for details.
+    /// See [`utf8_aware`](Cursor::utf8_aware) for details.
     ///
     /// Must never return an empty byteslice unless the underlying collection is empty.
     fn chunk(&self) -> &[u8];
@@ -40,7 +40,7 @@ pub trait Cursor {
     fn backtrack(&mut self) -> bool;
     /// Returns the total length of the data. This does not
     /// take the current cursor position into account and should
-    /// not change with calls to [`advance`] and [`backtrack`].
+    /// not change with calls to [`advance`](Cursor::advance) and [`backtrack`](Cursor::backtrack).
     fn total_bytes(&self) -> Option<usize>;
     /// The offset of the current chunk from the start of the haystack in bytes
     fn offset(&self) -> usize;
