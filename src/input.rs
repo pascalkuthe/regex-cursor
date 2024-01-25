@@ -55,9 +55,9 @@ impl<C: Cursor> Input<C> {
     /// # Example
     ///
     /// ```
-    /// use ropey_regex::Input;
+    /// use regex_cursor::Input;
     ///
-    /// let input = Input::new("foobar".into());
+    /// let input = Input::new("foobar");
     /// assert_eq!(b"foobar", input.chunk());
     /// ```
     #[cfg_attr(feature = "perf-inline", inline(always))]
@@ -70,9 +70,9 @@ impl<C: Cursor> Input<C> {
     /// # Example
     ///
     /// ```
-    /// use ropey_regex::Input;
+    /// use regex_cursor::Input;
     ///
-    /// let input = Input::new("foobar".into());
+    /// let input = Input::new("foobar");
     /// assert_eq!(b"foobar", input.chunk());
     /// ```
     #[cfg_attr(feature = "perf-inline", inline(always))]

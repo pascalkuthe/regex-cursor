@@ -15,7 +15,7 @@ backtrack moves the cursor a chunk back. Backtracking is required by this
 create. That makes it unsuitable for searching fully unbuffered streams like
 bytes send over a TCP connection.
 
-```
+```rust_ignore
 pub trait Cursor {
    fn chunk(&self) -> &[u8] { .. }
     fn advance(&mut self) -> bool { .. }
