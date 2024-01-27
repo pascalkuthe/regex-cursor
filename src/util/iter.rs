@@ -424,10 +424,12 @@ impl<C: Cursor> Searcher<C> {
     where
         F: FnMut(&mut Input<C>) -> Result<Option<Match>, MatchError>,
     {
+        let end = self.input.end();
         let mut m = match finder(&mut self.input)? {
             None => return Ok(None),
             Some(m) => m,
         };
+        assert!(m.end() <= end);
         if m.is_empty() && Some(m.end()) == self.last_match_end {
             m = match self.handle_overlapping_empty_match(m, finder)? {
                 None => return Ok(None),

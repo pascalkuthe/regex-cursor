@@ -640,6 +640,7 @@ impl<C: Cursor> Input<C> {
 
     #[inline]
     pub(crate) fn move_to(&mut self, at: usize) {
+        debug_assert!(at <= self.span.end.saturating_add(1));
         // TODO: fastpath for O(log N) chunk jumping
         while at < self.cursor.offset() {
             self.backtrack();

@@ -9,3 +9,6 @@ cc 9fc9553316dab0f5611d42ebdbfda893e991f183f013a13e105570d9bb935bbb # shrinks to
 cc 14528483978ac457a80022577321d49eadc3952a4bc848dcf622730341424c50 # shrinks to haystack = "\"", needle = "\""
 cc 0906f449ec7e583178f7865198d5c6c8589f6a760f57fe1e94fa71b751a13dcc # shrinks to haystack = "*", needle = "*"
 cc 3dc047ca1210586977bea6afe1c52f3f21b8f778358932316bce56a9c8dd069a # shrinks to mut haystack = "®", needle = "¯"
+cc d37b534f1d1d9b91a41efb745325c95e429901bd53d2bc4a31fd55997e5b243a # shrinks to mut haystack = "Ѩ", needle = "Ѩ"
+cc ea94b3aca8d5e5c4728504f773d8ec61d1e7a0e3aa8e186b9c953a199cd7e3e2 # shrinks to mut haystack = "A® a𛲜�a0 a0 𖬀 ", needle = "�"
+cc 80ea1772c0da540fd9e502978e22f1678ea0a06ec302d38891ecf36be39f966c # shrinks to mut haystack = "0Aa0 ��⺀  A", needle = "�"

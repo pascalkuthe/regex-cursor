@@ -97,13 +97,14 @@ fn find_n<C: Cursor, const AMBIGUITY: bool>(
     let first_chunk_end = input.get_chunk_end();
     let mut first_chunk = input.chunk();
     if first_chunk.len() != first_chunk_end {
-        if let Some(mut res) = prefilter
-            .find(first_chunk, Span { start: input.chunk_pos(), end: input.get_chunk_end() })
+        if let Some(mut res) =
+            prefilter.find(first_chunk, Span { start: input.chunk_pos(), end: first_chunk_end })
         {
             res.start += input.chunk_offset();
             res.end += input.chunk_offset();
             return Some(res);
         }
+        return None;
     }
     first_chunk = &first_chunk[input.chunk_pos()..];
 
@@ -113,7 +114,8 @@ fn find_n<C: Cursor, const AMBIGUITY: bool>(
 
     // again special case the first chunk since that is the hot path
     // and also keeps the logic below simpler
-    let mut buf_offset = if first_chunk.len() >= sliding_window {
+    let mut buf_offset = input.chunk_offset() + input.chunk_pos();
+    if first_chunk.len() >= sliding_window {
         find_chunk!(first_chunk, input.chunk_offset() + input.chunk_pos(), |start, off| {
             let mut buf = Vec::with_capacity(max_needle_len);
             buf.extend_from_slice(&first_chunk[start..]);
@@ -121,16 +123,15 @@ fn find_n<C: Cursor, const AMBIGUITY: bool>(
         });
         let carrry_over_start = first_chunk.len() - carry_over;
         first_chunk = &first_chunk[carrry_over_start..];
-        input.chunk_offset() + carrry_over_start
-    } else {
-        input.chunk_offset()
-    };
+        buf_offset += carrry_over_start;
+    }
     let mut buf = Vec::with_capacity(2 * sliding_window);
     buf.extend_from_slice(first_chunk);
 
     while input.chunk_offset() + input.chunk().len() < input.end() && input.advance() {
         debug_assert!(buf.len() < sliding_window, "{} {sliding_window}", buf.len());
         let mut chunk = &input.chunk()[..input.get_chunk_end()];
+        let mut chunk_offset = input.chunk_offset();
         // this condition only triggers until we have filled the buffer for the first time
         if buf.len() < carry_over {
             if buf.len() + chunk.len() <= carry_over {
@@ -140,6 +141,7 @@ fn find_n<C: Cursor, const AMBIGUITY: bool>(
             let copied = carry_over - buf.len();
             buf.extend_from_slice(&chunk[..copied]);
             chunk = &chunk[copied..];
+            chunk_offset += copied;
         }
         debug_assert!(buf.len() >= carry_over, "{} {carry_over}", buf.len());
 
@@ -171,12 +173,12 @@ fn find_n<C: Cursor, const AMBIGUITY: bool>(
         });
         buf.clear();
 
-        find_chunk!(input.chunk(), input.chunk_offset(), |start, off| {
+        find_chunk!(chunk, chunk_offset, |start, off| {
             buf.extend_from_slice(&chunk[start..]);
             disambiguate_match(prefilter, input, buf, off)
         });
         let carrry_over_start = chunk.len() - carry_over;
-        buf_offset = input.chunk_offset() + carrry_over_start;
+        buf_offset = chunk_offset + carrry_over_start;
         buf.extend_from_slice(&chunk[carrry_over_start..]);
     }
 
