@@ -152,11 +152,18 @@ impl<'a> RopeyCursor<'a> {
     }
 
     pub fn at(slice: ropey::RopeSlice<'a>, at: usize) -> Self {
-        let (iter, offset, _, _) = slice.chunks_at_char(at);
-        let mut res =
-            Self { current: &[], iter, pos: Pos::ChunkEnd, len: slice.len_bytes(), offset };
-        res.advance();
-        res
+        let (iter, offset, _, _) = slice.chunks_at_byte(at);
+        if offset == slice.len_bytes() {
+            let mut res =
+                Self { current: &[], iter, pos: Pos::ChunkStart, len: slice.len_bytes(), offset };
+            res.backtrack();
+            res
+        } else {
+            let mut res =
+                Self { current: &[], iter, pos: Pos::ChunkEnd, len: slice.len_bytes(), offset };
+            res.advance();
+            res
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::test_rope::SingleByteChunks;
+use crate::{test_rope::SingleByteChunks, Input};
 
 use {
     crate::engines::meta::{self, Regex},
@@ -98,6 +98,19 @@ fn default() -> Result<()> {
         runner.test_iter(suite()?.iter(), compiler(builder.clone()));
     }
     runner.assert();
+    Ok(())
+}
+
+#[cfg(feature = "ropey")]
+#[test]
+fn rope_one_past_end() -> Result<()> {
+    use crate::RopeyCursor;
+
+    let builder = Regex::builder()
+        .syntax(syntax::Config::new().case_insensitive(true).multi_line(true))
+        .build("git nix");
+    let rope = ropey::Rope::from_str("x");
+    builder.unwrap().find(Input::new(RopeyCursor::at(rope.slice(..), 1)).range(1..));
     Ok(())
 }
 
