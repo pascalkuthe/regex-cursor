@@ -736,7 +736,7 @@ impl<C: Cursor> Input<C> {
         let end = match range.end_bound() {
             Bound::Included(&i) => i.checked_add(1).unwrap(),
             Bound::Excluded(&i) => i,
-            Bound::Unbounded => usize::MAX,
+            Bound::Unbounded => self.cursor.total_bytes().unwrap_or(usize::MAX),
         };
         self.set_span(Span { start, end });
     }
