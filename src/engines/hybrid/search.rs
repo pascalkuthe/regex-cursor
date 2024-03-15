@@ -834,6 +834,7 @@ fn init_fwd<C: Cursor>(
             MatchError::quit(byte, offset)
         }
         StartError::UnsupportedAnchored { mode } => MatchError::unsupported_anchored(mode),
+        StartError::Cache { .. } => MatchError::gave_up(input.end()),
         _ => panic!("damm forward compatability"),
     })
 }
@@ -860,6 +861,7 @@ fn init_rev<C: Cursor>(
             MatchError::quit(byte, offset)
         }
         StartError::UnsupportedAnchored { mode } => MatchError::unsupported_anchored(mode),
+        StartError::Cache { .. } => MatchError::gave_up(input.end()),
         _ => panic!("damm forward compatability"),
     })
 }
