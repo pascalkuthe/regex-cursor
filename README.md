@@ -1,7 +1,7 @@
 # regex-cursor
 
 
-This crate provides routines for searching **discontiguous strings** for matches of a [regular expression] (aka "regex"). It is based on [regex-automata] and most of the code is adapted from the various crates in the [regex](https://github.com/rust-lang/regex) repository.
+This crate provides routines for searching **discontiguous strings** for matches of a [regular expression](https://en.wikipedia.org/wiki/Regular_expression) (aka "regex"). It is based on [regex-automata](https://crates.io/crates/regex-automata) and most of the code is adapted from the various crates in the [regex](https://github.com/rust-lang/regex) repository.
 
 It is intended as a prototype for upstream support for "streaming regex". The cursor based API in this crate is very similar to the API already exposed by `regex`/`regex-automata`. To that end a generic `Cursor` trait is provided that collections can implement.
 
