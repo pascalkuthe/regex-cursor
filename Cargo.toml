@@ -15,16 +15,16 @@ rust-version = "1.65"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-log = "0.4.20"
-memchr = "2.6"
-regex-automata = "0.4.5"
-regex-syntax = "0.8.2"
-ropey = { version = "1.6.0", default-features = false, optional = true }
+log = "0.4.22"
+memchr = "2.7"
+regex-automata = "0.4.7"
+regex-syntax = "0.8.4"
+ropey = { version = "1.6.1", default-features = false, optional = true }
 
 [dev-dependencies]
-anyhow = "1.0.79"
-proptest = "1.2.0"
-regex-test =  "0.1.0"
+anyhow = "1.0.89"
+proptest = "1.5.0"
+regex-test =  "0.1.1"
 
 [features]
 default = ["perf-inline", "ropey"]
