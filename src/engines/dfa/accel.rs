@@ -28,7 +28,7 @@ pub(crate) fn find_fwd<C: Cursor>(
     if let Some(pos) = find_fwd_imp(needles, input.chunk(), at) {
         return Some(pos);
     }
-    while input.advance() {
+    while input.chunk_offset() + input.chunk().len() < input.end() && input.advance() {
         if let Some(pos) = find_fwd_imp(needles, input.chunk(), 0) {
             return Some(pos);
         }
@@ -62,7 +62,7 @@ pub(crate) fn find_rev<C: Cursor>(
     if let Some(pos) = find_rev_imp(needles, input.chunk(), at) {
         return Some(pos);
     }
-    while input.backtrack() {
+    while input.start() < input.chunk_offset() && input.backtrack() {
         if let Some(pos) = find_rev_imp(needles, input.chunk(), input.chunk().len()) {
             return Some(pos);
         }
