@@ -1913,7 +1913,7 @@ impl RegexInfo {
         // The underlying regex is anchored, so if we don't start the search
         // at position 0, a match is impossible, because the anchor can only
         // match at position 0.
-        if input.start() > 0 && self.is_always_anchored_start() {
+        if input.start() != input.slice_span.start && self.is_always_anchored_start() {
             return true;
         }
         // // Same idea, but for the end anchor.

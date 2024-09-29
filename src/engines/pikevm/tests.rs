@@ -3,6 +3,7 @@ use std::ops::RangeBounds;
 use proptest::{prop_assert_eq, proptest};
 use regex_automata::nfa::thompson::pikevm::PikeVM;
 use regex_automata::nfa::thompson::Config;
+use regex_automata::util::escape::DebugHaystack;
 use regex_automata::util::syntax::Config as SyntaxConfig;
 
 use crate::engines::pikevm::find_iter;
@@ -17,7 +18,6 @@ fn test(needle: &str, haystack: &[u8]) {
 
 fn test_with_bounds(needle: &str, haystack: &[u8], bounds: impl RangeBounds<usize> + Clone) {
     for utf8 in [true, false] {
-        println!("start");
         let regex = PikeVM::builder()
             .syntax(SyntaxConfig::new().utf8(utf8))
             .thompson(Config::new().utf8(utf8))
@@ -29,7 +29,7 @@ fn test_with_bounds(needle: &str, haystack: &[u8], bounds: impl RangeBounds<usiz
         let iter1: Vec<_> = regex.find_iter(&mut cache1, input).collect();
         let input = Input::new(SingleByteChunks::new(haystack)).range(bounds.clone());
         let iter2: Vec<_> = find_iter(&regex, &mut cache2, input).collect();
-        assert_eq!(iter1, iter2);
+        assert_eq!(iter1, iter2, "matches of {needle} in {:?}", DebugHaystack(haystack));
     }
 }
 
@@ -54,6 +54,8 @@ fn any() {
 
 #[test]
 fn look_around() {
+    test("^bar", b"foobar");
+    test("foo$", b"foobar");
     test(r"(?m)(?:^|a)+", b"a\naaa\n");
     test_with_bounds(r"\b{end}", "𝛃".as_bytes(), 2..3);
     let haystack: String =

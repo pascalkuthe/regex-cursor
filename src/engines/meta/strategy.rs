@@ -1,4 +1,4 @@
-use core::fmt::Debug;
+use core::{fmt::Debug, panic};
 
 use std::sync::Arc;
 

@@ -23,6 +23,7 @@ pub struct Input<C: Cursor> {
     /// Position within the current chunk
     pub(crate) chunk_pos: usize,
     span: Span,
+    pub(crate) slice_span: Span,
     look_behind_len: usize,
     /// the last 4 bytes before the current chunk
     look_around: [u8; MAX_CODEPOINT_LEN * 2],
@@ -46,6 +47,7 @@ impl<C: Cursor> Input<C> {
             // behind more than one byte in utf8 mode
             look_around: [255; 8],
             span: Span { start, end },
+            slice_span: Span { start: 0, end: usize::MAX },
             look_behind_len: 0,
         }
     }
@@ -208,29 +210,35 @@ impl<C: Cursor> Input<C> {
 
     #[cfg_attr(feature = "perf-inline", inline(always))]
     pub(crate) fn ensure_look_behind(&mut self) -> Option<u8> {
-        if self.chunk_pos == 0 {
+        let look_behind = if self.chunk_pos == 0 {
             // move back to the last chunk to read the look behind
-            if self.backtrack() {
+            if self.slice_span.start != self.chunk_offset() && self.backtrack() {
                 self.advance_with_look_behind();
                 Some(self.look_around[self.look_behind_len - 1])
             } else {
                 self.look_behind_len = 0;
                 None
             }
+        } else if self.slice_span.start == self.chunk_offset() + self.chunk_pos {
+            None
         } else {
             self.chunk().get(self.chunk_pos - 1).copied()
-        }
+        };
+        look_behind
     }
 
     pub fn look_around(&mut self) -> (&[u8], usize) {
         // TODO: cache look_ahead?
+
+        let mut chunk = self.cursor.chunk();
+        let end = chunk.len().min(self.slice_span.end - self.chunk_offset());
+        chunk = &chunk[..end];
         if self.chunk_pos == 0 {
             #[cold]
             fn copy_partial_look_ahead(look_behind: &mut [u8], chunk: &[u8]) {
                 look_behind[..chunk.len()].copy_from_slice(chunk)
             }
 
-            let chunk = self.cursor.chunk();
             let look_around_len;
             if chunk.len() < MAX_CODEPOINT_LEN {
                 look_around_len = self.look_behind_len + chunk.len();
@@ -242,7 +250,7 @@ impl<C: Cursor> Input<C> {
             }
             (&self.look_around[..look_around_len], self.look_behind_len)
         } else {
-            (self.chunk(), self.chunk_pos)
+            (chunk, self.chunk_pos)
         }
     }
 
@@ -636,6 +644,42 @@ impl<C: Cursor> Input<C> {
             self.move_to(span.end);
         }
         self.span = span;
+    }
+
+    #[inline]
+    pub fn slice_span<S: Into<Span>>(&mut self, span: S) -> &mut Input<C> {
+        let span = span.into();
+        assert!(span.start <= span.end.saturating_add(1), "invalid span {:?}", span,);
+        if self.at() < span.start {
+            self.move_to(span.start);
+        } else if !self.is_done() && self.at() > span.end {
+            self.move_to(span.end);
+        }
+        self.slice_span = span;
+        self.span = span;
+        self
+    }
+
+    #[inline]
+    pub fn slice<R: RangeBounds<usize>>(&mut self, range: R) -> &mut Input<C> {
+        use core::ops::Bound;
+
+        // It's a little weird to convert ranges into spans, and then spans
+        // back into ranges when we actually slice the haystack. Because
+        // of that process, we always represent everything as a half-open
+        // internal. Therefore, handling things like m..=n is a little awkward.
+        let start = match range.start_bound() {
+            Bound::Included(&i) => i,
+            // Can this case ever happen? Range syntax doesn't support it...
+            Bound::Excluded(&i) => i.checked_add(1).unwrap(),
+            Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            Bound::Included(&i) => i.checked_add(1).unwrap(),
+            Bound::Excluded(&i) => i,
+            Bound::Unbounded => self.cursor.total_bytes().unwrap_or(usize::MAX),
+        };
+        self.slice_span(Span { start, end })
     }
 
     #[inline]

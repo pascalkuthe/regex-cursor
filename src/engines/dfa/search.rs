@@ -1,6 +1,6 @@
 use regex_automata::{
     dfa::{Automaton, StartError},
-    util::{prefilter::Prefilter, primitives::StateID, start},
+    util::{escape::DebugByte, prefilter::Prefilter, primitives::StateID, start},
     Anchored, HalfMatch, MatchError,
 };
 
@@ -693,7 +693,9 @@ fn init_rev<A: Automaton + ?Sized, C: Cursor>(
     let mut look_ahead = input.chunk().get(chunk_pos).copied();
     // this branch is probably not need since chunk_pos should be in bounds
     // anyway but I would rather not make that a validity invariant
-    if look_ahead.is_none() && input.advance() {
+    if chunk_pos + input.chunk_offset() == input.slice_span.end {
+        look_ahead = None
+    } else if look_ahead.is_none() && input.advance() {
         look_ahead = input.chunk().first().copied();
         input.backtrack();
     }
@@ -719,7 +721,7 @@ fn eoi_fwd<A: Automaton + ?Sized, C: Cursor>(
     let sp = input.get_span();
     input.move_to(sp.end);
     match input.chunk().get(sp.end - input.chunk_offset()) {
-        Some(&b) => {
+        Some(&b) if sp.end != input.slice_span.end => {
             *sid = dfa.next_state(*sid, b);
             if dfa.is_match_state(*sid) {
                 let pattern = dfa.match_pattern(*sid, 0);
@@ -728,7 +730,7 @@ fn eoi_fwd<A: Automaton + ?Sized, C: Cursor>(
                 return Err(MatchError::quit(b, sp.end));
             }
         }
-        None => {
+        _ => {
             *sid = dfa.next_eoi_state(*sid);
             if dfa.is_match_state(*sid) {
                 let pattern = dfa.match_pattern(*sid, 0);
@@ -750,7 +752,7 @@ fn eoi_rev<A: Automaton + ?Sized, C: Cursor>(
     mat: &mut Option<HalfMatch>,
 ) -> Result<(), MatchError> {
     let sp = input.get_span();
-    if sp.start > 0 {
+    if sp.start > input.slice_span.start {
         input.move_to(input.start() - 1);
         let byte = input.chunk()[sp.start - input.chunk_offset() - 1];
         *sid = dfa.next_state(*sid, byte);

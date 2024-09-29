@@ -847,9 +847,11 @@ fn init_rev<C: Cursor>(
 ) -> Result<LazyStateID, MatchError> {
     let chunk_pos = input.chunk_pos();
     let mut look_ahead = input.chunk().get(chunk_pos).copied();
-    // this branch is probably not need since chunk_pos should be in bounds
-    // anyway but I would rather not make that a validity invariant
-    if look_ahead.is_none() && input.advance() {
+    if chunk_pos + input.chunk_offset() == input.slice_span.end {
+        look_ahead = None
+    } else if look_ahead.is_none() && input.advance() {
+        // this branch is probably not need since chunk_pos should be in bounds
+        // anyway but I would rather not make that a validity invariant
         look_ahead = input.chunk().first().copied();
         input.backtrack();
     }
@@ -877,7 +879,7 @@ fn eoi_fwd<C: Cursor>(
     let sp = input.get_span();
     input.move_to(sp.end);
     match input.chunk().get(sp.end - input.chunk_offset()) {
-        Some(&b) => {
+        Some(&b) if sp.end != input.slice_span.end => {
             *sid = dfa.next_state(cache, *sid, b).map_err(|_| gave_up(sp.end))?;
             if sid.is_match() {
                 let pattern = dfa.match_pattern(cache, *sid, 0);
@@ -886,7 +888,7 @@ fn eoi_fwd<C: Cursor>(
                 return Err(MatchError::quit(b, sp.end));
             }
         }
-        None => {
+        _ => {
             *sid = dfa.next_eoi_state(cache, *sid).map_err(|_| gave_up(sp.end))?;
             if sid.is_match() {
                 let pattern = dfa.match_pattern(cache, *sid, 0);
@@ -910,7 +912,7 @@ fn eoi_rev<C: Cursor>(
 ) -> Result<(), MatchError> {
     let sp = input.get_span();
     // debug_assert_eq!(sp.start, 0);
-    if sp.start > 0 {
+    if sp.start > input.slice_span.start {
         input.move_to(input.start() - 1);
         let byte = input.chunk()[sp.start - input.chunk_offset() - 1];
         *sid = dfa.next_state(cache, *sid, byte).map_err(|_| gave_up(sp.start))?;

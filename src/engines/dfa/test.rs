@@ -2,6 +2,7 @@ use proptest::proptest;
 
 use crate::engines::dfa::find_iter;
 use crate::input::Input;
+use crate::test_rope::SingleByteChunks;
 
 #[test]
 fn searcher() {
@@ -21,13 +22,27 @@ fn searcher() {
 fn anchor() {
     let haystack = ":a";
     let needle = "$|:";
-    let foo = ropey::Rope::from_str(haystack);
+    let foo = SingleByteChunks::new(haystack.as_bytes());
     let regex = super::Regex::builder()
         .syntax(regex_automata::util::syntax::Config::new().case_insensitive(true).unicode(false))
         .build(needle)
         .unwrap();
     let iter1: Vec<_> = regex.find_iter(haystack).collect();
-    let iter2: Vec<_> = find_iter(&regex, Input::new(&foo)).collect();
+    let iter2: Vec<_> = find_iter(&regex, Input::new(foo)).collect();
+    assert_eq!(iter1, iter2);
+}
+
+#[test]
+fn end_of_input() {
+    let haystack = "a b c";
+    let needle = "\\b";
+    let foo = SingleByteChunks::new(haystack.as_bytes());
+    let regex = super::Regex::builder()
+        .syntax(regex_automata::util::syntax::Config::new().case_insensitive(true).unicode(false))
+        .build(needle)
+        .unwrap();
+    let iter1: Vec<_> = regex.find_iter(haystack).collect();
+    let iter2: Vec<_> = find_iter(&regex, Input::new(foo)).collect();
     assert_eq!(iter1, iter2);
 }
 

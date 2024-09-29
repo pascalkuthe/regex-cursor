@@ -114,6 +114,24 @@ fn rope_one_past_end() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn prefix() -> Result<()> {
+    let regex = Regex::builder().build("^foo$").unwrap();
+    let rope = ropey::Rope::from_str("xfoox");
+    let mut input = Input::new(rope.slice(..));
+    input.slice(1..4);
+    let mat1 = regex.find(input).unwrap();
+    assert_eq!(mat1.start(), 1);
+    assert_eq!(mat1.end(), 4);
+    let rope = SingleByteChunks::new(b"xfoox");
+    let mut input = Input::new(rope);
+    input.slice(1..4);
+    let mat1 = regex.find(input).unwrap();
+    assert_eq!(mat1.start(), 1);
+    assert_eq!(mat1.end(), 4);
+    Ok(())
+}
+
 /// Tests the default configuration minus the full DFA.
 #[test]
 fn no_dfa() -> Result<()> {
